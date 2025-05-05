@@ -1,0 +1,35 @@
+FROM node:18-slim
+
+WORKDIR /app
+
+# Install dependencies required for bcrypt and networking tools
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy package files first for better caching
+COPY package*.json ./
+
+# Install all dependencies
+RUN npm install
+
+# Copy all files
+COPY . .
+
+# Make the wait-for-it script executable and ensure it has Unix line endings
+RUN chmod +x wait-for-it.sh && \
+    apt-get update && apt-get install -y dos2unix && \
+    dos2unix wait-for-it.sh && \
+    apt-get remove -y dos2unix && \
+    rm -rf /var/lib/apt/lists/*
+
+# Rebuild bcrypt from source to ensure it's compatible with the current environment
+RUN npm rebuild bcrypt --build-from-source
+
+# Update the EXPOSE port to match the port in docker-compose.yml
+EXPOSE 3004
+
+CMD ["npm", "run", "dev"]

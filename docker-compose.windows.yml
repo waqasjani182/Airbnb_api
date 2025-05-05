@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    container_name: airbnb-sqlserver
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=Admin@123
+      - MSSQL_PID=Express
+      - MSSQL_TCP_PORT=1433
+      - TZ=UTC
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+    restart: unless-stopped
+    networks:
+      - airbnb-network
+    healthcheck:
+      test: /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "Admin@123" -Q "SELECT 1" || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: airbnb-api
+    ports:
+      - "3004:3004"
+    environment:
+      - NODE_ENV=development
+      - PORT=3004
+      - DB_USER=sa
+      - DB_PASSWORD=Admin@123
+      - DB_HOST=sqlserver
+      - DB_NAME=airbnb
+      - DB_PORT=1433
+      - JWT_SECRET=your_jwt_secret_key_here
+      - BASE_URL=http://localhost:3004
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - airbnb-network
+    command: >
+      sh -c "
+        echo 'Waiting for SQL Server to be ready...' &&
+        ./wait-for-it.sh sqlserver:1433 -t 120 &&
+        echo 'SQL Server is accepting connections!' &&
+        sleep 5 &&
+        echo 'Initializing database...' &&
+        node src/models/init-db.js &&
+        echo 'Starting application...' &&
+        npm run dev
+      "
+
+volumes:
+  sqlserver-data:
+    name: airbnb-sqlserver-data
+
+networks:
+  airbnb-network:
+    driver: bridge
+    name: airbnb-network
