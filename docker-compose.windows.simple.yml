@@ -9,6 +9,8 @@ services:
       - SA_PASSWORD=Admin@123
       - MSSQL_PID=Express
       - MSSQL_TCP_PORT=1433
+      # Minimum memory requirement for SQL Server
+      - MSSQL_MEMORY_LIMIT_MB=1024
     ports:
       - "1433:1433"
     volumes:
@@ -16,11 +18,13 @@ services:
     restart: unless-stopped
     networks:
       - airbnb-network
+    # Add command to ensure proper startup
+    command: /opt/mssql/bin/sqlservr
 
   api:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.windows
     container_name: airbnb-api
     ports:
       - "3004:3004"
@@ -34,17 +38,27 @@ services:
       - DB_PORT=1433
       - JWT_SECRET=your_jwt_secret_key_here
       - BASE_URL=http://localhost:3004
+      # Add longer timeouts for SQL Server connections
+      - MSSQL_CONNECTION_TIMEOUT=60000
+      - MSSQL_REQUEST_TIMEOUT=60000
     depends_on:
       - sqlserver
     restart: unless-stopped
     networks:
       - airbnb-network
+    # Use a more robust startup script
     command: >
       sh -c "
         echo 'Waiting for SQL Server to be ready...' &&
-        ./wait-for-it.sh sqlserver:1433 -t 120 &&
-        echo 'SQL Server is accepting connections!' &&
-        sleep 5 &&
+        for i in {1..30}; do
+          if nc -z sqlserver 1433; then
+            echo 'SQL Server is accepting connections!'
+            break
+          fi
+          echo 'Waiting for SQL Server to start...'
+          sleep 5
+        done &&
+        sleep 10 &&
         echo 'Initializing database...' &&
         node src/models/init-db.js &&
         echo 'Starting application...' &&

@@ -3,6 +3,10 @@ const path = require('path');
 const sql = require('mssql');
 require('dotenv').config();
 
+// Use environment variables for timeouts or fallback to higher values for Windows
+const connectionTimeout = parseInt(process.env.MSSQL_CONNECTION_TIMEOUT || '60000');
+const requestTimeout = parseInt(process.env.MSSQL_REQUEST_TIMEOUT || '60000');
+
 async function createDatabase() {
   // Configuration to connect to master database
   const masterConfig = {
@@ -14,10 +18,16 @@ async function createDatabase() {
     options: {
       encrypt: false,
       trustServerCertificate: true,
-      connectTimeout: 30000 // Increase timeout to 30 seconds
+      connectTimeout: connectionTimeout
     },
-    connectionTimeout: 30000, // Increase connection timeout
-    requestTimeout: 30000 // Increase request timeout
+    connectionTimeout: connectionTimeout,
+    requestTimeout: requestTimeout,
+    pool: {
+      max: 10,
+      min: 0,
+      idleTimeoutMillis: 30000,
+      acquireTimeoutMillis: connectionTimeout
+    }
   };
 
   console.log('Attempting to connect to SQL Server with config:', {
@@ -72,10 +82,16 @@ async function initializeSchema() {
     options: {
       encrypt: false,
       trustServerCertificate: true,
-      connectTimeout: 30000 // Increase timeout to 30 seconds
+      connectTimeout: connectionTimeout
     },
-    connectionTimeout: 30000, // Increase connection timeout
-    requestTimeout: 30000 // Increase request timeout
+    connectionTimeout: connectionTimeout,
+    requestTimeout: requestTimeout,
+    pool: {
+      max: 10,
+      min: 0,
+      idleTimeoutMillis: 30000,
+      acquireTimeoutMillis: connectionTimeout
+    }
   };
 
   try {
@@ -128,9 +144,14 @@ async function initializeSchema() {
 }
 
 async function initializeDatabase() {
-  const maxRetries = 5;
+  const maxRetries = 10; // Increase max retries for Windows
   let retryCount = 0;
   let success = false;
+
+  console.log('Starting database initialization with the following settings:');
+  console.log(`- Connection timeout: ${connectionTimeout}ms`);
+  console.log(`- Request timeout: ${requestTimeout}ms`);
+  console.log(`- Max retries: ${maxRetries}`);
 
   while (retryCount < maxRetries && !success) {
     try {
@@ -148,8 +169,9 @@ async function initializeDatabase() {
       if (!success) {
         retryCount++;
         if (retryCount < maxRetries) {
-          console.log(`Retrying in 5 seconds...`);
-          await new Promise(resolve => setTimeout(resolve, 5000));
+          const waitTime = 10000; // Increase wait time to 10 seconds for Windows
+          console.log(`Retrying in ${waitTime/1000} seconds...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
         }
       }
     } catch (error) {
@@ -157,8 +179,9 @@ async function initializeDatabase() {
       retryCount++;
 
       if (retryCount < maxRetries) {
-        console.log(`Retrying in 5 seconds...`);
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        const waitTime = 10000; // Increase wait time to 10 seconds for Windows
+        console.log(`Retrying in ${waitTime/1000} seconds...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
       } else {
         console.error('All retry attempts failed');
         process.exit(1);
