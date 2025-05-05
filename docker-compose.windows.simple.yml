@@ -9,11 +9,6 @@ services:
       - SA_PASSWORD=Admin@123
       - MSSQL_PID=Express
       - MSSQL_TCP_PORT=1433
-      - TZ=UTC
-    deploy:
-      resources:
-        limits:
-          memory: 2GB
     ports:
       - "1433:1433"
     volumes:
@@ -21,12 +16,6 @@ services:
     restart: unless-stopped
     networks:
       - airbnb-network
-    healthcheck:
-      test: ["CMD-SHELL", "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'Admin@123' -Q 'SELECT 1' || exit 1"]
-      interval: 20s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
 
   api:
     build:
@@ -46,8 +35,7 @@ services:
       - JWT_SECRET=your_jwt_secret_key_here
       - BASE_URL=http://localhost:3004
     depends_on:
-      sqlserver:
-        condition: service_healthy
+      - sqlserver
     restart: unless-stopped
     networks:
       - airbnb-network
