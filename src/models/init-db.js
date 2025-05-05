@@ -1,95 +1,175 @@
 const fs = require('fs');
 const path = require('path');
-const { Pool } = require('pg');
+const sql = require('mssql');
 require('dotenv').config();
 
 async function createDatabase() {
-  const pgConfig = {
-    user: process.env.DB_USER,
-    host: process.env.DB_HOST,
-    database: 'postgres', // Connect to default postgres database
-    password: process.env.DB_PASSWORD,
-    port: process.env.DB_PORT || 5432,
+  // Configuration to connect to master database
+  const masterConfig = {
+    user: process.env.DB_USER || 'sa',
+    password: process.env.DB_PASSWORD || 'Admin@123',
+    server: process.env.DB_HOST || 'localhost',
+    database: 'master',
+    port: parseInt(process.env.DB_PORT || '1433'),
+    options: {
+      encrypt: false,
+      trustServerCertificate: true,
+      connectTimeout: 30000 // Increase timeout to 30 seconds
+    },
+    connectionTimeout: 30000, // Increase connection timeout
+    requestTimeout: 30000 // Increase request timeout
   };
 
-  const pgPool = new Pool(pgConfig);
+  console.log('Attempting to connect to SQL Server with config:', {
+    user: masterConfig.user,
+    server: masterConfig.server,
+    database: masterConfig.database,
+    port: masterConfig.port
+  });
 
   try {
-    // Check if airbnb database already exists
-    const checkResult = await pgPool.query(
-      "SELECT 1 FROM pg_database WHERE datname = 'airbnb'"
-    );
+    // Connect to master database
+    await sql.connect(masterConfig);
 
-    if (checkResult.rows.length === 0) {
-      // Create airbnb database if it doesn't exist
-      await pgPool.query('CREATE DATABASE airbnb');
-      console.log('Database "airbnb" created successfully');
-    } else {
-      console.log('Database "airbnb" already exists');
+    // Check if airbnb database already exists
+    const checkResult = await sql.query`
+      SELECT name FROM sys.databases WHERE name = 'airbnb'
+    `;
+
+    if (checkResult.recordset.length > 0) {
+      console.log('Database "airbnb" already exists, skipping creation');
+      await sql.close();
+      return true;
     }
 
-    await pgPool.end();
+    // Create the database only if it doesn't exist
+    await sql.query`
+      CREATE DATABASE airbnb;
+    `;
+    console.log('Database "airbnb" created successfully');
+
+    await sql.close();
     return true;
   } catch (error) {
     console.error('Error creating database:', error);
-    await pgPool.end();
+    try {
+      await sql.close();
+    } catch (err) {
+      // Ignore error on close
+    }
     return false;
   }
 }
 
 async function initializeSchema() {
+  // Configuration to connect to airbnb database
   const airbnbConfig = {
-    user: process.env.DB_USER,
-    host: process.env.DB_HOST,
-    database: 'airbnb', // Connect to airbnb database
-    password: process.env.DB_PASSWORD,
-    port: process.env.DB_PORT || 5432,
+    user: process.env.DB_USER || 'sa',
+    password: process.env.DB_PASSWORD || 'Admin@123',
+    server: process.env.DB_HOST || 'localhost',
+    database: 'airbnb',
+    port: parseInt(process.env.DB_PORT || '1433'),
+    options: {
+      encrypt: false,
+      trustServerCertificate: true,
+      connectTimeout: 30000 // Increase timeout to 30 seconds
+    },
+    connectionTimeout: 30000, // Increase connection timeout
+    requestTimeout: 30000 // Increase request timeout
   };
 
-  const airbnbPool = new Pool(airbnbConfig);
-
   try {
+    // Connect to airbnb database
+    await sql.connect(airbnbConfig);
+
+    // Check if schema is already initialized by looking for the users table
+    const tableCheck = await sql.query`
+      SELECT TABLE_NAME
+      FROM INFORMATION_SCHEMA.TABLES
+      WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_NAME = 'users'
+    `;
+
+    if (tableCheck.recordset.length > 0) {
+      console.log('Schema already initialized, skipping initialization');
+      await sql.close();
+      return true;
+    }
+
     // Read the schema SQL file
     const schemaSQL = fs.readFileSync(
-      path.join(__dirname, 'schema.sql'),
+      path.join(__dirname, 'mssql-schema.sql'),
       'utf8'
     );
 
-    // Split the SQL into individual statements
+    // Split the SQL into individual statements (SQL Server uses GO as a batch separator)
     const statements = schemaSQL
-      .split(';')
-      .filter(statement => statement.trim() !== '')
-      .map(statement => statement + ';');
+      .split('GO')
+      .filter(statement => statement.trim() !== '');
 
     // Execute each statement
     for (const statement of statements) {
       if (statement.trim() !== '') {
-        await airbnbPool.query(statement);
+        await sql.query(statement);
       }
     }
 
     console.log('Schema initialized successfully');
-    await airbnbPool.end();
+    await sql.close();
     return true;
   } catch (error) {
     console.error('Error initializing schema:', error);
-    await airbnbPool.end();
+    try {
+      await sql.close();
+    } catch (err) {
+      // Ignore error on close
+    }
     return false;
   }
 }
 
 async function initializeDatabase() {
-  try {
-    const dbCreated = await createDatabase();
-    if (dbCreated) {
-      const schemaInitialized = await initializeSchema();
-      if (schemaInitialized) {
-        console.log('Database initialization completed successfully');
+  const maxRetries = 5;
+  let retryCount = 0;
+  let success = false;
+
+  while (retryCount < maxRetries && !success) {
+    try {
+      console.log(`Attempt ${retryCount + 1} of ${maxRetries} to initialize database`);
+
+      const dbCreated = await createDatabase();
+      if (dbCreated) {
+        const schemaInitialized = await initializeSchema();
+        if (schemaInitialized) {
+          console.log('Database initialization completed successfully');
+          success = true;
+        }
+      }
+
+      if (!success) {
+        retryCount++;
+        if (retryCount < maxRetries) {
+          console.log(`Retrying in 5 seconds...`);
+          await new Promise(resolve => setTimeout(resolve, 5000));
+        }
+      }
+    } catch (error) {
+      console.error(`Attempt ${retryCount + 1} failed:`, error);
+      retryCount++;
+
+      if (retryCount < maxRetries) {
+        console.log(`Retrying in 5 seconds...`);
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      } else {
+        console.error('All retry attempts failed');
+        process.exit(1);
       }
     }
+  }
+
+  if (success) {
     process.exit(0);
-  } catch (error) {
-    console.error('Database initialization failed:', error);
+  } else {
+    console.error('Database initialization failed after all retry attempts');
     process.exit(1);
   }
 }

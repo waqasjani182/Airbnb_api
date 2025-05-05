@@ -14,23 +14,24 @@ const register = async (req, res) => {
       [email]
     );
 
-    if (userExists.rows.length > 0) {
+    if (userExists.recordset && userExists.recordset.length > 0) {
       return res.status(400).json({ message: 'User already exists' });
     }
 
     // Hash password
     const hashedPassword = await hashPassword(password);
 
-    // Create new user
+    // Create new user with OUTPUT clause to get the inserted record
     const result = await db.query(
-      `INSERT INTO users 
-       (first_name, last_name, email, password, phone, is_host) 
-       VALUES ($1, $2, $3, $4, $5, $6) 
-       RETURNING id, first_name, last_name, email, phone, is_host, created_at`,
+      `INSERT INTO users
+       (first_name, last_name, email, password, phone, is_host)
+       OUTPUT INSERTED.id, INSERTED.first_name, INSERTED.last_name, INSERTED.email,
+              INSERTED.phone, INSERTED.is_host, INSERTED.created_at
+       VALUES ($1, $2, $3, $4, $5, $6)`,
       [first_name, last_name, email, hashedPassword, phone, is_host || false]
     );
 
-    const user = result.rows[0];
+    const user = result.recordset[0];
 
     // Create JWT token
     const token = jwt.sign(
@@ -66,11 +67,11 @@ const login = async (req, res) => {
     // Check if user exists
     const result = await db.query('SELECT * FROM users WHERE email = $1', [email]);
 
-    if (result.rows.length === 0) {
+    if (!result.recordset || result.recordset.length === 0) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    const user = result.rows[0];
+    const user = result.recordset[0];
 
     // Check password
     const isMatch = await comparePassword(password, user.password);
@@ -114,11 +115,11 @@ const getCurrentUser = async (req, res) => {
       [req.user.id]
     );
 
-    if (result.rows.length === 0) {
+    if (!result.recordset || result.recordset.length === 0) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    res.json({ user: result.rows[0] });
+    res.json({ user: result.recordset[0] });
   } catch (error) {
     console.error('Get current user error:', error);
     res.status(500).json({ message: 'Server error' });

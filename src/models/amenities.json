@@ -1,0 +1,112 @@
+{
+  "amenities": [
+    {
+      "id": 1,
+      "name": "WiFi",
+      "icon": "wifi",
+      "description": "High-speed wireless internet access"
+    },
+    {
+      "id": 2,
+      "name": "Air Conditioning",
+      "icon": "ac",
+      "description": "Climate control to keep you cool"
+    },
+    {
+      "id": 3,
+      "name": "Heating",
+      "icon": "heating",
+      "description": "Climate control to keep you warm"
+    },
+    {
+      "id": 4,
+      "name": "Kitchen",
+      "icon": "kitchen",
+      "description": "Space for cooking and meal preparation"
+    },
+    {
+      "id": 5,
+      "name": "TV",
+      "icon": "tv",
+      "description": "Television with standard cable/satellite"
+    },
+    {
+      "id": 6,
+      "name": "Washer",
+      "icon": "washer",
+      "description": "Washing machine for laundry"
+    },
+    {
+      "id": 7,
+      "name": "Dryer",
+      "icon": "dryer",
+      "description": "Clothes dryer for laundry"
+    },
+    {
+      "id": 8,
+      "name": "Free Parking",
+      "icon": "parking",
+      "description": "Free parking on premises"
+    },
+    {
+      "id": 9,
+      "name": "Pool",
+      "icon": "pool",
+      "description": "Swimming pool available for guests"
+    },
+    {
+      "id": 10,
+      "name": "Hot Tub",
+      "icon": "hot-tub",
+      "description": "Hot tub or jacuzzi available for guests"
+    },
+    {
+      "id": 11,
+      "name": "Gym",
+      "icon": "gym",
+      "description": "Fitness equipment or gym access"
+    },
+    {
+      "id": 12,
+      "name": "Workspace",
+      "icon": "workspace",
+      "description": "Dedicated workspace suitable for laptops"
+    }
+  ],
+  "categories": [
+    {
+      "id": 1,
+      "name": "Essentials",
+      "amenities": [1, 2, 3, 4]
+    },
+    {
+      "id": 2,
+      "name": "Features",
+      "amenities": [5, 9, 10]
+    },
+    {
+      "id": 3,
+      "name": "Location",
+      "amenities": [8]
+    },
+    {
+      "id": 4,
+      "name": "Convenience",
+      "amenities": [6, 7, 11, 12]
+    }
+  ],
+  "iconMap": {
+    "wifi": "fa-wifi",
+    "ac": "fa-snowflake",
+    "heating": "fa-fire",
+    "kitchen": "fa-utensils",
+    "tv": "fa-tv",
+    "washer": "fa-tshirt",
+    "dryer": "fa-wind",
+    "parking": "fa-parking",
+    "pool": "fa-swimming-pool",
+    "hot-tub": "fa-hot-tub",
+    "gym": "fa-dumbbell",
+    "workspace": "fa-laptop"
+  }
+}

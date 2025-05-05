@@ -1,0 +1,54 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    container_name: airbnb-sqlserver
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=Admin@123
+      - MSSQL_PID=Express
+    ports:
+      - "1434:1433"
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+    restart: unless-stopped
+    networks:
+      - airbnb-network
+
+  api:
+    build: .
+    container_name: airbnb-api
+    ports:
+      - "3004:3004"
+    environment:
+      - NODE_ENV=development
+      - PORT=3004
+      - DB_USER=sa
+      - DB_PASSWORD=Admin@123
+      - DB_HOST=sqlserver
+      - DB_NAME=airbnb
+      - DB_PORT=1433
+      - JWT_SECRET=your_jwt_secret_key_here
+      - BASE_URL=http://localhost:3004
+    depends_on:
+      - sqlserver
+    restart: unless-stopped
+    networks:
+      - airbnb-network
+    command: >
+      sh -c "
+        echo 'Waiting for SQL Server to be ready...' &&
+        ./wait-for-it.sh sqlserver:1433 -t 120 &&
+        echo 'SQL Server is accepting connections!' &&
+        sleep 5 &&
+        echo 'Initializing database...' &&
+        node src/models/init-db.js &&
+        echo 'Starting application...' &&
+        npm run dev
+      "
+
+volumes:
+  sqlserver-data:
+
+networks:
+  airbnb-network:
+    driver: bridge
