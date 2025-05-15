@@ -28,11 +28,11 @@ docker system df
 echo.
 
 echo Checking if SQL Server is accepting connections...
-docker exec airbnb-sqlserver /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "Admin@123" -Q "SELECT @@VERSION"
+docker exec airbnb-sqlserver bash -c "if [ -f /opt/mssql-tools/bin/sqlcmd ]; then /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'Admin@123' -Q 'SELECT @@VERSION'; else echo 'sqlcmd not found. SQL Server tools may not be installed yet.'; fi"
 echo.
 
 echo Checking database tables...
-docker exec airbnb-sqlserver /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "Admin@123" -d airbnb -Q "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'"
+docker exec airbnb-sqlserver bash -c "if [ -f /opt/mssql-tools/bin/sqlcmd ]; then /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'Admin@123' -d airbnb -Q 'SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = \"BASE TABLE\"'; else echo 'sqlcmd not found. SQL Server tools may not be installed yet.'; fi"
 echo.
 
 echo Troubleshooting complete.

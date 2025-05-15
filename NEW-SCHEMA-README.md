@@ -42,6 +42,19 @@ This will:
 - Create and start the containers with the new schema
 - Initialize the database with the new schema
 
+### Checking the Database Schema
+
+After starting the application, you can check if the database schema was properly created:
+```
+check-database-schema.bat
+```
+
+This script will:
+- Verify that SQL Server is running
+- Check if the SQL Server tools are installed
+- List all tables in the database
+- Show sample data from the Users and Properties tables
+
 ### Viewing Logs
 
 To view the logs of the running containers:
@@ -53,7 +66,14 @@ docker-compose -f docker-compose.windows.new-schema.yml logs -f
 
 To stop the containers:
 ```
-docker-compose -f docker-compose.windows.new-schema.yml down
+stop-airbnb-new-schema.bat
+```
+
+### Troubleshooting
+
+If you encounter issues, you can run the troubleshooting script:
+```
+troubleshoot-sqlserver-new-schema.bat
 ```
 
 ## Connecting to the Database

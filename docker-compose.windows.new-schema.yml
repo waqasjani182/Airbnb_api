@@ -18,8 +18,24 @@ services:
     restart: unless-stopped
     networks:
       - airbnb-network
-    # Add command to ensure proper startup
-    command: /opt/mssql/bin/sqlservr
+    # Install SQL Server tools and start SQL Server
+    command: >
+      bash -c "
+        # Start SQL Server in the background
+        /opt/mssql/bin/sqlservr &
+
+        # Wait for SQL Server to start
+        sleep 10
+
+        # Install SQL Server tools
+        apt-get update && apt-get install -y curl gnupg
+        curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add -
+        curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list > /etc/apt/sources.list.d/mssql-release.list
+        apt-get update && ACCEPT_EULA=Y apt-get install -y mssql-tools unixodbc-dev
+
+        # Keep the container running
+        tail -f /dev/null
+      "
 
   api:
     build:
