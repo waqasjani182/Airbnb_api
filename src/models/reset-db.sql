@@ -1,4 +1,26 @@
--- Schema for Airbnb database in SQL Server
+-- Reset and recreate the Airbnb database with the new schema
+
+-- Create the database if it doesn't exist
+IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = 'airbnb')
+BEGIN
+    CREATE DATABASE airbnb;
+END
+
+-- Use the database
+USE airbnb;
+
+-- Drop all existing tables if they exist
+IF OBJECT_ID('Property_Facility_Rating', 'U') IS NOT NULL DROP TABLE Property_Facility_Rating;
+IF OBJECT_ID('Property_Facilities', 'U') IS NOT NULL DROP TABLE Property_Facilities;
+IF OBJECT_ID('Room', 'U') IS NOT NULL DROP TABLE Room;
+IF OBJECT_ID('Flat', 'U') IS NOT NULL DROP TABLE Flat;
+IF OBJECT_ID('House', 'U') IS NOT NULL DROP TABLE House;
+IF OBJECT_ID('Booking_Review', 'U') IS NOT NULL DROP TABLE Booking_Review;
+IF OBJECT_ID('Booking', 'U') IS NOT NULL DROP TABLE Booking;
+IF OBJECT_ID('Pictures', 'U') IS NOT NULL DROP TABLE Pictures;
+IF OBJECT_ID('Properties', 'U') IS NOT NULL DROP TABLE Properties;
+IF OBJECT_ID('Facilities', 'U') IS NOT NULL DROP TABLE Facilities;
+IF OBJECT_ID('Users', 'U') IS NOT NULL DROP TABLE Users;
 
 -- Users table
 CREATE TABLE Users (
@@ -15,9 +37,6 @@ INSERT INTO Users (user_ID, password, name, email, address, phone_No) VALUES
     (1, 'password123', 'John Doe', 'john@example.com', '123 Main St', '555-1234'),
     (2, 'securepass', 'Jane Smith', 'jane@example.com', '456 Oak Ave', '555-5678'),
     (3, 'userpass', 'Bob Johnson', 'bob@example.com', '789 Pine Rd', '555-9012');
-
--- Select all users
-SELECT * FROM Users;
 
 -- Properties table
 CREATE TABLE Properties (
@@ -42,9 +61,6 @@ INSERT INTO Properties (property_id, user_id, property_type, rent_per_day, addre
     (2, 2, 'Apartment', 100.00, '456 Downtown St', 4.2, 'New York', -73.935242, 40.730610, 'City Apartment', 'Modern apartment in downtown', 2),
     (3, 1, 'Room', 50.00, '789 College Ave', 3.8, 'Boston', -71.058880, 42.360082, 'Cozy Room', 'Comfortable room for students', 1);
 
--- Select all properties
-SELECT * FROM Properties;
-
 -- Pictures table
 CREATE TABLE Pictures (
     picture_id INT PRIMARY KEY IDENTITY(1,1),
@@ -59,9 +75,6 @@ INSERT INTO Pictures (property_id, image_url) VALUES
     (1, 'images/property1_2.jpg'),
     (2, 'images/property2_1.jpg'),
     (3, 'images/property3_1.jpg');
-
--- Select all pictures
-SELECT * FROM Pictures;
 
 -- Booking table
 CREATE TABLE Booking (
@@ -81,9 +94,6 @@ INSERT INTO Booking (booking_id, user_ID, property_id, status, booking_date, sta
     (1, 3, 1, 'Confirmed', '2023-05-01', '2023-06-10', '2023-06-15'),
     (2, 2, 3, 'Pending', '2023-05-05', '2023-07-01', '2023-07-05'),
     (3, 3, 2, 'Completed', '2023-04-10', '2023-04-20', '2023-04-25');
-
--- Select all bookings
-SELECT * FROM Booking;
 
 -- Booking Review table
 CREATE TABLE Booking_Review (
@@ -106,9 +116,6 @@ INSERT INTO Booking_Review (booking_id, user_ID, property_id, user_rating, user_
     (1, 3, 1, 4.5, 'Great guest!', 4.8, 'Excellent host', 4.7, 'Beautiful property, would stay again'),
     (3, 3, 2, 4.0, 'Good guest', 4.2, 'Nice host', 4.5, 'Clean and comfortable');
 
--- Select all booking reviews
-SELECT * FROM Booking_Review;
-
 -- Facilities table
 CREATE TABLE Facilities (
     facility_id INT PRIMARY KEY,
@@ -123,9 +130,6 @@ INSERT INTO Facilities (facility_id, facility_type) VALUES
     (4, 'Parking'),
     (5, 'Air Conditioning');
 
--- Select all facilities
-SELECT * FROM Facilities;
-
 -- House table
 CREATE TABLE House (
     property_id INT PRIMARY KEY,
@@ -136,9 +140,6 @@ CREATE TABLE House (
 -- Insert sample houses
 INSERT INTO House (property_id, total_bedrooms) VALUES
     (1, 3);
-
--- Select all houses
-SELECT * FROM House;
 
 -- Flat table
 CREATE TABLE Flat (
@@ -151,9 +152,6 @@ CREATE TABLE Flat (
 INSERT INTO Flat (property_id, total_rooms) VALUES
     (2, 2);
 
--- Select all flats
-SELECT * FROM Flat;
-
 -- Room table
 CREATE TABLE Room (
     property_id INT PRIMARY KEY,
@@ -164,9 +162,6 @@ CREATE TABLE Room (
 -- Insert sample rooms
 INSERT INTO Room (property_id, total_beds) VALUES
     (3, 1);
-
--- Select all rooms
-SELECT * FROM Room;
 
 -- Property Facilities junction table
 CREATE TABLE Property_Facilities (
@@ -185,9 +180,6 @@ INSERT INTO Property_Facilities (property_id, facility_id) VALUES
     (2, 5),
     (3, 1),
     (3, 4);
-
--- Select all property facilities
-SELECT * FROM Property_Facilities;
 
 -- Property Facility Rating table
 CREATE TABLE Property_Facility_Rating (
@@ -208,6 +200,3 @@ INSERT INTO Property_Facility_Rating (property_id, user_ID, facility_id, rating,
     (1, 3, 2, 4.8, 'Clean pool'),
     (2, 3, 1, 3.5, 'WiFi was a bit slow'),
     (2, 3, 5, 5.0, 'Excellent air conditioning');
-
--- Select all property facility ratings
-SELECT * FROM Property_Facility_Rating;

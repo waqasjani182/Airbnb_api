@@ -40,8 +40,8 @@ services:
         ./wait-for-it.sh sqlserver:1433 -t 120 &&
         echo 'SQL Server is accepting connections!' &&
         sleep 5 &&
-        echo 'Initializing database...' &&
-        node src/models/init-db.js &&
+        echo 'Resetting and initializing database...' &&
+        node src/models/reset-db.js &&
         echo 'Starting application...' &&
         npm run dev
       "

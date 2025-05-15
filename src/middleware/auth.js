@@ -24,19 +24,17 @@ const auth = (req, res, next) => {
 };
 
 // Middleware to check if user is a host
+// In our new schema, we don't have an is_host field, so we'll assume all users can be hosts
 const isHost = (req, res, next) => {
-  if (!req.user.is_host) {
-    return res.status(403).json({ message: 'Access denied. Host privileges required.' });
-  }
+  // For now, we'll allow all authenticated users to be hosts
   next();
 };
 
 // Middleware to check if user is an admin
-// Note: This is a placeholder. In a real app, you would have an is_admin field in your users table
+// In our new schema, we don't have an is_admin field, so we'll use a specific user ID as admin
 const isAdmin = (req, res, next) => {
-  // For now, we'll just check if the user is a host as a placeholder
-  // In a real app, you would check for admin privileges
-  if (!req.user.is_host) {
+  // For now, we'll consider user with ID 1 as admin
+  if (req.user.user_ID !== 1) {
     return res.status(403).json({ message: 'Access denied. Admin privileges required.' });
   }
   next();

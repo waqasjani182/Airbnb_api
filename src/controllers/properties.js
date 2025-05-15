@@ -1,42 +1,41 @@
 const db = require('../config/db');
 const { uploadPropertyImage, uploadPropertyImages } = require('../utils/upload');
 
-// Helper function to fetch related property data (images, amenities, reviews)
+// Helper function to fetch related property data (images, facilities, reviews)
 const fetchRelatedPropertyData = async (properties) => {
   if (!properties || properties.length === 0) {
     return [];
   }
 
-  const propertyIds = properties.map(property => property.id);
+  const propertyIds = properties.map(property => property.property_id);
 
   // Fetch all images for the properties
   const imagesResult = await db.query(
-    `SELECT * FROM property_images WHERE property_id IN (${propertyIds.map((_, i) => `$${i + 1}`).join(',')}) ORDER BY is_primary DESC`,
+    `SELECT * FROM Pictures WHERE property_id IN (${propertyIds.map((_, i) => `$${i + 1}`).join(',')})`,
     propertyIds
   );
 
-  // Fetch all amenities for the properties
-  const amenitiesResult = await db.query(
-    `SELECT a.*, pa.property_id
-     FROM amenities a
-     JOIN property_amenities pa ON a.id = pa.amenity_id
-     WHERE pa.property_id IN (${propertyIds.map((_, i) => `$${i + 1}`).join(',')})`,
+  // Fetch all facilities (amenities) for the properties
+  const facilitiesResult = await db.query(
+    `SELECT f.*, pf.property_id
+     FROM Facilities f
+     JOIN Property_Facilities pf ON f.facility_id = pf.facility_id
+     WHERE pf.property_id IN (${propertyIds.map((_, i) => `$${i + 1}`).join(',')})`,
     propertyIds
   );
 
   // Fetch all reviews for the properties
   const reviewsResult = await db.query(
-    `SELECT r.*, u.first_name, u.last_name, u.profile_image, r.property_id
-     FROM reviews r
-     JOIN users u ON r.guest_id = u.id
-     WHERE r.property_id IN (${propertyIds.map((_, i) => `$${i + 1}`).join(',')})
-     ORDER BY r.created_at DESC`,
+    `SELECT br.*, u.name, br.property_id
+     FROM Booking_Review br
+     JOIN Users u ON br.user_ID = u.user_ID
+     WHERE br.property_id IN (${propertyIds.map((_, i) => `$${i + 1}`).join(',')})`,
     propertyIds
   );
 
-  // Group images, amenities, and reviews by property_id
+  // Group images, facilities, and reviews by property_id
   const imagesByPropertyId = {};
-  const amenitiesByPropertyId = {};
+  const facilitiesByPropertyId = {};
   const reviewsByPropertyId = {};
 
   imagesResult.recordset.forEach(image => {
@@ -46,11 +45,11 @@ const fetchRelatedPropertyData = async (properties) => {
     imagesByPropertyId[image.property_id].push(image);
   });
 
-  amenitiesResult.recordset.forEach(amenity => {
-    if (!amenitiesByPropertyId[amenity.property_id]) {
-      amenitiesByPropertyId[amenity.property_id] = [];
+  facilitiesResult.recordset.forEach(facility => {
+    if (!facilitiesByPropertyId[facility.property_id]) {
+      facilitiesByPropertyId[facility.property_id] = [];
     }
-    amenitiesByPropertyId[amenity.property_id].push(amenity);
+    facilitiesByPropertyId[facility.property_id].push(facility);
   });
 
   reviewsResult.recordset.forEach(review => {
@@ -62,24 +61,24 @@ const fetchRelatedPropertyData = async (properties) => {
 
   // Enhance properties with related data
   const enhancedProperties = properties.map(property => {
-    const propertyId = property.id;
+    const propertyId = property.property_id;
     const images = imagesByPropertyId[propertyId] || [];
-    const amenities = amenitiesByPropertyId[propertyId] || [];
+    const facilities = facilitiesByPropertyId[propertyId] || [];
     const reviews = reviewsByPropertyId[propertyId] || [];
 
     // Calculate average rating
     let avgRating = 0;
     if (reviews.length > 0) {
-      avgRating = reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length;
+      avgRating = reviews.reduce((sum, review) => sum + (review.property_rating || 0), 0) / reviews.length;
     }
 
     return {
       ...property,
       images,
-      amenities,
+      facilities,
       reviews,
-      avg_rating: property.avg_rating || avgRating,
-      review_count: property.review_count || reviews.length
+      avg_rating: property.rating || avgRating,
+      review_count: reviews.length
     };
   });
 
@@ -103,12 +102,9 @@ const getAllProperties = async (req, res) => {
 
     // Build the query with filters
     let query = `
-      SELECT p.*, u.first_name as host_first_name, u.last_name as host_last_name,
-      (SELECT TOP 1 image_url FROM property_images WHERE property_id = p.id AND is_primary = 1) as primary_image,
-      (SELECT AVG(CAST(rating AS FLOAT)) FROM reviews WHERE property_id = p.id) as avg_rating,
-      (SELECT COUNT(*) FROM reviews WHERE property_id = p.id) as review_count
-      FROM properties p
-      JOIN users u ON p.host_id = u.id
+      SELECT p.*, u.name as host_name
+      FROM Properties p
+      JOIN Users u ON p.user_id = u.user_ID
       WHERE 1=1
     `;
 
@@ -122,19 +118,20 @@ const getAllProperties = async (req, res) => {
     }
 
     if (min_price) {
-      query += ` AND p.price_per_night >= $${paramIndex}`;
+      query += ` AND p.rent_per_day >= $${paramIndex}`;
       queryParams.push(min_price);
       paramIndex++;
     }
 
     if (max_price) {
-      query += ` AND p.price_per_night <= $${paramIndex}`;
+      query += ` AND p.rent_per_day <= $${paramIndex}`;
       queryParams.push(max_price);
       paramIndex++;
     }
 
     if (bedrooms) {
-      query += ` AND p.bedrooms >= $${paramIndex}`;
+      // Check if property is a house
+      query += ` AND EXISTS (SELECT 1 FROM House h WHERE h.property_id = p.property_id AND h.total_bedrooms >= $${paramIndex})`;
       queryParams.push(bedrooms);
       paramIndex++;
     }
@@ -146,7 +143,7 @@ const getAllProperties = async (req, res) => {
     }
 
     // Add pagination (SQL Server syntax)
-    query += ` ORDER BY p.created_at DESC OFFSET $${paramIndex} ROWS FETCH NEXT $${paramIndex + 1} ROWS ONLY`;
+    query += ` ORDER BY p.property_id OFFSET $${paramIndex} ROWS FETCH NEXT $${paramIndex + 1} ROWS ONLY`;
     queryParams.push(offset, limit);
 
     // Execute query
@@ -154,7 +151,7 @@ const getAllProperties = async (req, res) => {
 
     // Get total count for pagination
     const countQuery = `
-      SELECT COUNT(*) as count FROM properties p
+      SELECT COUNT(*) as count FROM Properties p
       WHERE 1=1
     `;
 
@@ -170,19 +167,20 @@ const getAllProperties = async (req, res) => {
     }
 
     if (min_price) {
-      countQueryWithFilters += ` AND p.price_per_night >= $${countParamIndex}`;
+      countQueryWithFilters += ` AND p.rent_per_day >= $${countParamIndex}`;
       countQueryParams.push(min_price);
       countParamIndex++;
     }
 
     if (max_price) {
-      countQueryWithFilters += ` AND p.price_per_night <= $${countParamIndex}`;
+      countQueryWithFilters += ` AND p.rent_per_day <= $${countParamIndex}`;
       countQueryParams.push(max_price);
       countParamIndex++;
     }
 
     if (bedrooms) {
-      countQueryWithFilters += ` AND p.bedrooms >= $${countParamIndex}`;
+      // Check if property is a house
+      countQueryWithFilters += ` AND EXISTS (SELECT 1 FROM House h WHERE h.property_id = p.property_id AND h.total_bedrooms >= $${countParamIndex})`;
       countQueryParams.push(bedrooms);
       countParamIndex++;
     }
@@ -219,10 +217,10 @@ const getPropertyById = async (req, res) => {
   try {
     // Get property details
     const propertyResult = await db.query(
-      `SELECT p.*, u.first_name as host_first_name, u.last_name as host_last_name, u.profile_image as host_profile_image
-       FROM properties p
-       JOIN users u ON p.host_id = u.id
-       WHERE p.id = $1`,
+      `SELECT p.*, u.name as host_name
+       FROM Properties p
+       JOIN Users u ON p.user_id = u.user_ID
+       WHERE p.property_id = $1`,
       [req.params.id]
     );
 
@@ -234,41 +232,70 @@ const getPropertyById = async (req, res) => {
 
     // Get property images
     const imagesResult = await db.query(
-      'SELECT * FROM property_images WHERE property_id = $1 ORDER BY is_primary DESC',
+      'SELECT * FROM Pictures WHERE property_id = $1',
       [req.params.id]
     );
 
-    // Get property amenities
-    const amenitiesResult = await db.query(
-      `SELECT a.* FROM amenities a
-       JOIN property_amenities pa ON a.id = pa.amenity_id
-       WHERE pa.property_id = $1`,
+    // Get property facilities (amenities)
+    const facilitiesResult = await db.query(
+      `SELECT f.* FROM Facilities f
+       JOIN Property_Facilities pf ON f.facility_id = pf.facility_id
+       WHERE pf.property_id = $1`,
       [req.params.id]
     );
 
     // Get property reviews
     const reviewsResult = await db.query(
-      `SELECT r.*, u.first_name, u.last_name, u.profile_image
-       FROM reviews r
-       JOIN users u ON r.guest_id = u.id
-       WHERE r.property_id = $1
-       ORDER BY r.created_at DESC`,
+      `SELECT br.*, u.name
+       FROM Booking_Review br
+       JOIN Users u ON br.user_ID = u.user_ID
+       WHERE br.property_id = $1`,
       [req.params.id]
     );
 
     // Calculate average rating
     let avgRating = 0;
     if (reviewsResult.recordset.length > 0) {
-      avgRating = reviewsResult.recordset.reduce((sum, review) => sum + review.rating, 0) / reviewsResult.recordset.length;
+      avgRating = reviewsResult.recordset.reduce((sum, review) => sum + (review.property_rating || 0), 0) / reviewsResult.recordset.length;
+    }
+
+    // Get property type specific details
+    let propertyTypeDetails = {};
+
+    if (property.property_type === 'House') {
+      const houseResult = await db.query(
+        'SELECT * FROM House WHERE property_id = $1',
+        [req.params.id]
+      );
+      if (houseResult.recordset.length > 0) {
+        propertyTypeDetails = houseResult.recordset[0];
+      }
+    } else if (property.property_type === 'Flat' || property.property_type === 'Apartment') {
+      const flatResult = await db.query(
+        'SELECT * FROM Flat WHERE property_id = $1',
+        [req.params.id]
+      );
+      if (flatResult.recordset.length > 0) {
+        propertyTypeDetails = flatResult.recordset[0];
+      }
+    } else if (property.property_type === 'Room') {
+      const roomResult = await db.query(
+        'SELECT * FROM Room WHERE property_id = $1',
+        [req.params.id]
+      );
+      if (roomResult.recordset.length > 0) {
+        propertyTypeDetails = roomResult.recordset[0];
+      }
     }
 
     res.json({
       property: {
         ...property,
+        ...propertyTypeDetails,
         images: imagesResult.recordset,
-        amenities: amenitiesResult.recordset,
+        facilities: facilitiesResult.recordset,
         reviews: reviewsResult.recordset,
-        avg_rating: avgRating,
+        avg_rating: property.rating || avgRating,
         review_count: reviewsResult.recordset.length
       }
     });
@@ -285,41 +312,69 @@ const createProperty = async (req, res) => {
     description,
     address,
     city,
-    state,
-    country,
-    zip_code,
     latitude,
     longitude,
-    price_per_night,
-    bedrooms,
-    bathrooms,
-    max_guests,
+    rent_per_day,
     property_type,
-    amenities
+    guest,
+    total_bedrooms,
+    total_rooms,
+    total_beds,
+    facilities
   } = req.body;
 
-  const hostId = req.user.id;
+  // Get user ID from auth middleware
+  const userId = req.user.user_ID || req.user.id;
 
   try {
     // Start a transaction
     const transactionId = await db.beginTransaction();
 
+    // Get the next available property_id
+    const maxIdResult = await db.queryWithinTransaction(
+      transactionId,
+      'SELECT MAX(property_id) as max_id FROM Properties'
+    );
+
+    const nextPropertyId = (maxIdResult.recordset[0].max_id || 0) + 1;
+
     // Create property
     const propertyResult = await db.queryWithinTransaction(
       transactionId,
-      `INSERT INTO properties
-       (host_id, title, description, address, city, state, country, zip_code,
-        latitude, longitude, price_per_night, bedrooms, bathrooms, max_guests, property_type)
+      `INSERT INTO Properties
+       (property_id, user_id, property_type, rent_per_day, address, city,
+        longitude, latitude, title, description, guest)
        OUTPUT INSERTED.*
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
-        hostId, title, description, address, city, state, country, zip_code,
-        latitude, longitude, price_per_night, bedrooms, bathrooms, max_guests, property_type
+        nextPropertyId, userId, property_type, rent_per_day, address, city,
+        longitude, latitude, title, description, guest
       ]
     );
 
     // SQL Server returns recordset instead of rows
     const property = propertyResult.recordset[0];
+
+    // Add property type specific details
+    if (property_type === 'House' && total_bedrooms) {
+      await db.queryWithinTransaction(
+        transactionId,
+        'INSERT INTO House (property_id, total_bedrooms) VALUES ($1, $2)',
+        [property.property_id, total_bedrooms]
+      );
+    } else if ((property_type === 'Flat' || property_type === 'Apartment') && total_rooms) {
+      await db.queryWithinTransaction(
+        transactionId,
+        'INSERT INTO Flat (property_id, total_rooms) VALUES ($1, $2)',
+        [property.property_id, total_rooms]
+      );
+    } else if (property_type === 'Room' && total_beds) {
+      await db.queryWithinTransaction(
+        transactionId,
+        'INSERT INTO Room (property_id, total_beds) VALUES ($1, $2)',
+        [property.property_id, total_beds]
+      );
+    }
 
     // Handle uploaded image files if present
     const uploadedImages = [];
@@ -336,8 +391,8 @@ const createProperty = async (req, res) => {
         // Insert image into database
         const imageResult = await db.queryWithinTransaction(
           transactionId,
-          'INSERT INTO property_images (property_id, image_url, is_primary) OUTPUT INSERTED.* VALUES ($1, $2, $3)',
-          [property.id, imageUrl, i === 0] // First image is primary
+          'INSERT INTO Pictures (property_id, image_url) OUTPUT INSERTED.* VALUES ($1, $2)',
+          [property.property_id, imageUrl]
         );
 
         uploadedImages.push(imageResult.recordset[0]);
@@ -351,35 +406,31 @@ const createProperty = async (req, res) => {
         : req.body.images;
 
       for (let i = 0; i < images.length; i++) {
-        // Determine if this should be primary (only if no files were uploaded)
-        const isPrimary = uploadedImages.length === 0 && i === 0;
-
         await db.queryWithinTransaction(
           transactionId,
-          'INSERT INTO property_images (property_id, image_url, is_primary) VALUES ($1, $2, $3)',
-          [property.id, images[i].url, isPrimary]
+          'INSERT INTO Pictures (property_id, image_url) VALUES ($1, $2)',
+          [property.property_id, images[i].url]
         );
 
         uploadedImages.push({
-          property_id: property.id,
-          image_url: images[i].url,
-          is_primary: isPrimary
+          property_id: property.property_id,
+          image_url: images[i].url
         });
       }
     }
 
-    // Add property amenities
-    if (amenities) {
-      const amenityIds = typeof amenities === 'string'
-        ? JSON.parse(amenities)
-        : amenities;
+    // Add property facilities
+    if (facilities) {
+      const facilityIds = typeof facilities === 'string'
+        ? JSON.parse(facilities)
+        : facilities;
 
-      if (Array.isArray(amenityIds) && amenityIds.length > 0) {
-        for (const amenityId of amenityIds) {
+      if (Array.isArray(facilityIds) && facilityIds.length > 0) {
+        for (const facilityId of facilityIds) {
           await db.queryWithinTransaction(
             transactionId,
-            'INSERT INTO property_amenities (property_id, amenity_id) VALUES ($1, $2)',
-            [property.id, amenityId]
+            'INSERT INTO Property_Facilities (property_id, facility_id) VALUES ($1, $2)',
+            [property.property_id, facilityId]
           );
         }
       }
@@ -388,31 +439,64 @@ const createProperty = async (req, res) => {
     // Commit transaction
     await db.commitTransaction(transactionId);
 
-    // Get amenities data
-    let amenitiesData = [];
-    if (amenities) {
-      const amenityIds = typeof amenities === 'string'
-        ? JSON.parse(amenities)
-        : amenities;
+    // Get facilities data
+    let facilitiesData = [];
+    if (facilities) {
+      const facilityIds = typeof facilities === 'string'
+        ? JSON.parse(facilities)
+        : facilities;
 
-      if (Array.isArray(amenityIds) && amenityIds.length > 0) {
-        amenitiesData = await db.query(
-          `SELECT a.* FROM amenities a WHERE a.id IN (${amenityIds.map((_, i) => `$${i + 1}`).join(',')})`,
-          amenityIds
+      if (Array.isArray(facilityIds) && facilityIds.length > 0) {
+        facilitiesData = await db.query(
+          `SELECT f.* FROM Facilities f WHERE f.facility_id IN (${facilityIds.map((_, i) => `$${i + 1}`).join(',')})`,
+          facilityIds
         ).then(result => result.recordset);
       }
     }
 
+    // Get property type specific details
+    let propertyTypeDetails = {};
+
+    if (property_type === 'House') {
+      const houseResult = await db.query(
+        'SELECT * FROM House WHERE property_id = $1',
+        [property.property_id]
+      );
+      if (houseResult.recordset.length > 0) {
+        propertyTypeDetails = houseResult.recordset[0];
+      }
+    } else if (property_type === 'Flat' || property_type === 'Apartment') {
+      const flatResult = await db.query(
+        'SELECT * FROM Flat WHERE property_id = $1',
+        [property.property_id]
+      );
+      if (flatResult.recordset.length > 0) {
+        propertyTypeDetails = flatResult.recordset[0];
+      }
+    } else if (property_type === 'Room') {
+      const roomResult = await db.query(
+        'SELECT * FROM Room WHERE property_id = $1',
+        [property.property_id]
+      );
+      if (roomResult.recordset.length > 0) {
+        propertyTypeDetails = roomResult.recordset[0];
+      }
+    }
+
     // Add related data
-    property.avg_rating = 0;  // New property has no reviews
-    property.review_count = 0;
-    property.images = uploadedImages;
-    property.amenities = amenitiesData;
-    property.reviews = [];
+    const enhancedProperty = {
+      ...property,
+      ...propertyTypeDetails,
+      images: uploadedImages,
+      facilities: facilitiesData,
+      reviews: [],
+      avg_rating: 0,  // New property has no reviews
+      review_count: 0
+    };
 
     res.status(201).json({
       message: 'Property created successfully',
-      property
+      property: enhancedProperty
     });
   } catch (error) {
     // Rollback transaction on error

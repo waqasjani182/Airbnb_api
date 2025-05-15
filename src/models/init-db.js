@@ -98,17 +98,31 @@ async function initializeSchema() {
     // Connect to airbnb database
     await sql.connect(airbnbConfig);
 
-    // Check if schema is already initialized by looking for the users table
-    const tableCheck = await sql.query`
-      SELECT TABLE_NAME
-      FROM INFORMATION_SCHEMA.TABLES
-      WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_NAME = 'users'
+    // Drop all existing tables to ensure clean schema
+    console.log('Dropping existing tables to ensure clean schema...');
+
+    // Disable foreign key constraints
+    await sql.query`
+      EXEC sp_MSforeachtable "ALTER TABLE ? NOCHECK CONSTRAINT all"
     `;
 
-    if (tableCheck.recordset.length > 0) {
-      console.log('Schema already initialized, skipping initialization');
-      await sql.close();
-      return true;
+    // Get all table names
+    const tables = await sql.query`
+      SELECT TABLE_NAME
+      FROM INFORMATION_SCHEMA.TABLES
+      WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA = 'dbo'
+    `;
+
+    // Drop each table
+    for (const table of tables.recordset) {
+      try {
+        await sql.query`
+          DROP TABLE [${table.TABLE_NAME}]
+        `;
+        console.log(`Dropped table: ${table.TABLE_NAME}`);
+      } catch (err) {
+        console.log(`Error dropping table ${table.TABLE_NAME}: ${err.message}`);
+      }
     }
 
     // Read the schema SQL file

@@ -12,6 +12,7 @@ const bookingRoutes = require('./routes/bookings');
 const reviewRoutes = require('./routes/reviews');
 const authRoutes = require('./routes/auth');
 const amenityRoutes = require('./routes/amenities');
+const facilityRoutes = require('./routes/facilities');
 
 // Initialize express app
 const app = express();
@@ -38,6 +39,7 @@ app.use('/api/properties', propertyRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/amenities', amenityRoutes);
+app.use('/api/facilities', facilityRoutes);
 
 // Root route
 app.get('/', (req, res) => {

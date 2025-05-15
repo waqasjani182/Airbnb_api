@@ -5,12 +5,12 @@ require('dotenv').config();
 
 // Register a new user
 const register = async (req, res) => {
-  const { first_name, last_name, email, password, phone, is_host } = req.body;
+  const { name, email, password, address, phone_No } = req.body;
 
   try {
     // Check if user already exists
     const userExists = await db.query(
-      'SELECT * FROM users WHERE email = $1',
+      'SELECT * FROM Users WHERE email = @param0',
       [email]
     );
 
@@ -21,21 +21,24 @@ const register = async (req, res) => {
     // Hash password
     const hashedPassword = await hashPassword(password);
 
+    // Get the next available user_ID
+    const maxIdResult = await db.query('SELECT MAX(user_ID) as max_id FROM Users');
+    const nextUserId = (maxIdResult.recordset[0].max_id || 0) + 1;
+
     // Create new user with OUTPUT clause to get the inserted record
     const result = await db.query(
-      `INSERT INTO users
-       (first_name, last_name, email, password, phone, is_host)
-       OUTPUT INSERTED.id, INSERTED.first_name, INSERTED.last_name, INSERTED.email,
-              INSERTED.phone, INSERTED.is_host, INSERTED.created_at
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [first_name, last_name, email, hashedPassword, phone, is_host || false]
+      `INSERT INTO Users
+       (user_ID, name, email, password, address, phone_No)
+       OUTPUT INSERTED.*
+       VALUES (@param0, @param1, @param2, @param3, @param4, @param5)`,
+      [nextUserId, name, email, hashedPassword, address, phone_No]
     );
 
     const user = result.recordset[0];
 
     // Create JWT token
     const token = jwt.sign(
-      { id: user.id, email: user.email, is_host: user.is_host },
+      { user_ID: user.user_ID, email: user.email },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -44,13 +47,12 @@ const register = async (req, res) => {
       message: 'User registered successfully',
       token,
       user: {
-        id: user.id,
-        first_name: user.first_name,
-        last_name: user.last_name,
+        user_ID: user.user_ID,
+        name: user.name,
         email: user.email,
-        phone: user.phone,
-        is_host: user.is_host,
-        created_at: user.created_at
+        address: user.address,
+        phone_No: user.phone_No,
+        profile_image: user.profile_image
       }
     });
   } catch (error) {
@@ -65,7 +67,7 @@ const login = async (req, res) => {
 
   try {
     // Check if user exists
-    const result = await db.query('SELECT * FROM users WHERE email = $1', [email]);
+    const result = await db.query('SELECT * FROM Users WHERE email = @param0', [email]);
 
     if (!result.recordset || result.recordset.length === 0) {
       return res.status(401).json({ message: 'Invalid credentials' });
@@ -82,7 +84,7 @@ const login = async (req, res) => {
 
     // Create JWT token
     const token = jwt.sign(
-      { id: user.id, email: user.email, is_host: user.is_host },
+      { user_ID: user.user_ID, email: user.email },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -91,14 +93,12 @@ const login = async (req, res) => {
       message: 'Login successful',
       token,
       user: {
-        id: user.id,
-        first_name: user.first_name,
-        last_name: user.last_name,
+        user_ID: user.user_ID,
+        name: user.name,
         email: user.email,
-        phone: user.phone,
-        is_host: user.is_host,
-        profile_image: user.profile_image,
-        created_at: user.created_at
+        address: user.address,
+        phone_No: user.phone_No,
+        profile_image: user.profile_image
       }
     });
   } catch (error) {
@@ -111,15 +111,26 @@ const login = async (req, res) => {
 const getCurrentUser = async (req, res) => {
   try {
     const result = await db.query(
-      'SELECT id, first_name, last_name, email, phone, profile_image, is_host, created_at FROM users WHERE id = $1',
-      [req.user.id]
+      'SELECT * FROM Users WHERE user_ID = @param0',
+      [req.user.user_ID]
     );
 
     if (!result.recordset || result.recordset.length === 0) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    res.json({ user: result.recordset[0] });
+    const user = result.recordset[0];
+
+    res.json({
+      user: {
+        user_ID: user.user_ID,
+        name: user.name,
+        email: user.email,
+        address: user.address,
+        phone_No: user.phone_No,
+        profile_image: user.profile_image
+      }
+    });
   } catch (error) {
     console.error('Get current user error:', error);
     res.status(500).json({ message: 'Server error' });
