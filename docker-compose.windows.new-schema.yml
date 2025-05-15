@@ -9,11 +9,8 @@ services:
       - SA_PASSWORD=Admin@123
       - MSSQL_PID=Express
       - MSSQL_TCP_PORT=1433
-      - TZ=UTC
-    deploy:
-      resources:
-        limits:
-          memory: 2GB
+      # Minimum memory requirement for SQL Server
+      - MSSQL_MEMORY_LIMIT_MB=1024
     ports:
       - "1433:1433"
     volumes:
@@ -21,17 +18,13 @@ services:
     restart: unless-stopped
     networks:
       - airbnb-network
-    healthcheck:
-      test: ["CMD-SHELL", "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'Admin@123' -Q 'SELECT 1' || exit 1"]
-      interval: 20s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
+    # Add command to ensure proper startup
+    command: /opt/mssql/bin/sqlservr
 
   api:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.new-schema
     container_name: airbnb-api
     ports:
       - "3004:3004"
@@ -45,29 +38,43 @@ services:
       - DB_PORT=1433
       - JWT_SECRET=your_jwt_secret_key_here
       - BASE_URL=http://localhost:3004
+      # Add longer timeouts for SQL Server connections
+      - MSSQL_CONNECTION_TIMEOUT=60000
+      - MSSQL_REQUEST_TIMEOUT=60000
+      # Use the new schema
+      - USE_NEW_SCHEMA=true
     depends_on:
-      sqlserver:
-        condition: service_healthy
+      - sqlserver
     restart: unless-stopped
     networks:
       - airbnb-network
+    volumes:
+      # Mount the uploads directory for profile images and property images
+      - ./public/uploads:/app/public/uploads
+    # Use a more robust startup script with the new schema
     command: >
       sh -c "
         echo 'Waiting for SQL Server to be ready...' &&
-        ./wait-for-it.sh sqlserver:1433 -t 120 &&
-        echo 'SQL Server is accepting connections!' &&
-        sleep 5 &&
-        echo 'Initializing database...' &&
-        node src/models/init-db.js &&
+        for i in {1..30}; do
+          if nc -z sqlserver 1433; then
+            echo 'SQL Server is accepting connections!'
+            break
+          fi
+          echo 'Waiting for SQL Server to start...'
+          sleep 5
+        done &&
+        sleep 10 &&
+        echo 'Initializing database with new schema...' &&
+        node src/models/reset-db.js &&
         echo 'Starting application...' &&
         npm run dev
       "
 
 volumes:
   sqlserver-data:
-    name: airbnb-sqlserver-data
+    name: airbnb-sqlserver-data-new-schema
 
 networks:
   airbnb-network:
     driver: bridge
-    name: airbnb-network
+    name: airbnb-network-new-schema
