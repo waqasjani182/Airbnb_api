@@ -32,11 +32,7 @@ CREATE TABLE Users (
     phone_No VARCHAR(20)
 );
 
--- Insert sample users
-INSERT INTO Users (user_ID, password, name, email, address, phone_No) VALUES
-    (1, 'password123', 'John Doe', 'john@example.com', '123 Main St', '555-1234'),
-    (2, 'securepass', 'Jane Smith', 'jane@example.com', '456 Oak Ave', '555-5678'),
-    (3, 'userpass', 'Bob Johnson', 'bob@example.com', '789 Pine Rd', '555-9012');
+-- Users table is ready for data insertion via API
 
 -- Properties table
 CREATE TABLE Properties (
@@ -55,11 +51,7 @@ CREATE TABLE Properties (
     FOREIGN KEY (user_id) REFERENCES Users(user_ID)
 );
 
--- Insert sample properties
-INSERT INTO Properties (property_id, user_id, property_type, rent_per_day, address, rating, city, longitude, latitude, title, description, guest) VALUES
-    (1, 1, 'House', 150.00, '123 Beach Rd', 4.5, 'Miami', -80.191788, 25.761681, 'Beach House', 'Beautiful house near the beach', 4),
-    (2, 2, 'Apartment', 100.00, '456 Downtown St', 4.2, 'New York', -73.935242, 40.730610, 'City Apartment', 'Modern apartment in downtown', 2),
-    (3, 1, 'Room', 50.00, '789 College Ave', 3.8, 'Boston', -71.058880, 42.360082, 'Cozy Room', 'Comfortable room for students', 1);
+-- Properties table is ready for data insertion via API
 
 -- Pictures table
 CREATE TABLE Pictures (
@@ -69,12 +61,7 @@ CREATE TABLE Pictures (
     FOREIGN KEY (property_id) REFERENCES Properties(property_id)
 );
 
--- Insert sample pictures
-INSERT INTO Pictures (property_id, image_url) VALUES
-    (1, 'images/property1_1.jpg'),
-    (1, 'images/property1_2.jpg'),
-    (2, 'images/property2_1.jpg'),
-    (3, 'images/property3_1.jpg');
+-- Pictures table is ready for data insertion via API
 
 -- Booking table
 CREATE TABLE Booking (
@@ -85,15 +72,13 @@ CREATE TABLE Booking (
     booking_date DATE,
     start_date DATE,
     end_date DATE,
+    total_amount DECIMAL(10, 2),
+    guests INT,
     FOREIGN KEY (user_ID) REFERENCES Users(user_ID),
     FOREIGN KEY (property_id) REFERENCES Properties(property_id)
 );
 
--- Insert sample bookings
-INSERT INTO Booking (booking_id, user_ID, property_id, status, booking_date, start_date, end_date) VALUES
-    (1, 3, 1, 'Confirmed', '2023-05-01', '2023-06-10', '2023-06-15'),
-    (2, 2, 3, 'Pending', '2023-05-05', '2023-07-01', '2023-07-05'),
-    (3, 3, 2, 'Completed', '2023-04-10', '2023-04-20', '2023-04-25');
+-- Booking table is ready for data insertion via API
 
 -- Booking Review table
 CREATE TABLE Booking_Review (
@@ -111,10 +96,7 @@ CREATE TABLE Booking_Review (
     FOREIGN KEY (property_id) REFERENCES Properties(property_id)
 );
 
--- Insert sample booking reviews
-INSERT INTO Booking_Review (booking_id, user_ID, property_id, user_rating, user_review, owner_rating, owner_review, property_rating, property_review) VALUES
-    (1, 3, 1, 4.5, 'Great guest!', 4.8, 'Excellent host', 4.7, 'Beautiful property, would stay again'),
-    (3, 3, 2, 4.0, 'Good guest', 4.2, 'Nice host', 4.5, 'Clean and comfortable');
+-- Booking_Review table is ready for data insertion via API
 
 -- Facilities table
 CREATE TABLE Facilities (
@@ -122,13 +104,7 @@ CREATE TABLE Facilities (
     facility_type VARCHAR(100)
 );
 
--- Insert sample facilities
-INSERT INTO Facilities (facility_id, facility_type) VALUES
-    (1, 'WiFi'),
-    (2, 'Pool'),
-    (3, 'Gym'),
-    (4, 'Parking'),
-    (5, 'Air Conditioning');
+-- Facilities table is ready for data insertion via API
 
 -- House table
 CREATE TABLE House (
@@ -137,9 +113,7 @@ CREATE TABLE House (
     FOREIGN KEY (property_id) REFERENCES Properties(property_id)
 );
 
--- Insert sample houses
-INSERT INTO House (property_id, total_bedrooms) VALUES
-    (1, 3);
+-- House table is ready for data insertion via API
 
 -- Flat table
 CREATE TABLE Flat (
@@ -148,9 +122,7 @@ CREATE TABLE Flat (
     FOREIGN KEY (property_id) REFERENCES Properties(property_id)
 );
 
--- Insert sample flats
-INSERT INTO Flat (property_id, total_rooms) VALUES
-    (2, 2);
+-- Flat table is ready for data insertion via API
 
 -- Room table
 CREATE TABLE Room (
@@ -159,9 +131,7 @@ CREATE TABLE Room (
     FOREIGN KEY (property_id) REFERENCES Properties(property_id)
 );
 
--- Insert sample rooms
-INSERT INTO Room (property_id, total_beds) VALUES
-    (3, 1);
+-- Room table is ready for data insertion via API
 
 -- Property Facilities junction table
 CREATE TABLE Property_Facilities (
@@ -172,14 +142,7 @@ CREATE TABLE Property_Facilities (
     FOREIGN KEY (facility_id) REFERENCES Facilities(facility_id)
 );
 
--- Insert sample property facilities
-INSERT INTO Property_Facilities (property_id, facility_id) VALUES
-    (1, 1),
-    (1, 2),
-    (2, 1),
-    (2, 5),
-    (3, 1),
-    (3, 4);
+-- Property_Facilities table is ready for data insertion via API
 
 -- Property Facility Rating table
 CREATE TABLE Property_Facility_Rating (
@@ -194,9 +157,4 @@ CREATE TABLE Property_Facility_Rating (
     FOREIGN KEY (facility_id) REFERENCES Facilities(facility_id)
 );
 
--- Insert sample property facility ratings
-INSERT INTO Property_Facility_Rating (property_id, user_ID, facility_id, rating, review) VALUES
-    (1, 3, 1, 4.5, 'Great WiFi speed'),
-    (1, 3, 2, 4.8, 'Clean pool'),
-    (2, 3, 1, 3.5, 'WiFi was a bit slow'),
-    (2, 3, 5, 5.0, 'Excellent air conditioning');
+-- Property_Facility_Rating table is ready for data insertion via API

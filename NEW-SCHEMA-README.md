@@ -53,7 +53,7 @@ This script will:
 - Verify that SQL Server is running
 - Check if the SQL Server tools are installed
 - List all tables in the database
-- Show sample data from the Users and Properties tables
+- Verify that tables are empty (no dummy data)
 
 ### Viewing Logs
 

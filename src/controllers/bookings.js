@@ -87,22 +87,81 @@ const getBookingById = async (req, res) => {
   }
 };
 
+// Helper function to calculate total amount
+const calculateTotalAmount = (startDate, endDate, rentPerDay) => {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const timeDifference = end.getTime() - start.getTime();
+  const numberOfDays = Math.ceil(timeDifference / (1000 * 3600 * 24));
+  return numberOfDays * rentPerDay;
+};
+
+// Helper function to validate booking dates
+const validateBookingDates = (startDate, endDate) => {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // Reset time to start of day
+
+  if (start < today) {
+    return { isValid: false, message: 'Start date cannot be in the past' };
+  }
+
+  if (end <= start) {
+    return { isValid: false, message: 'End date must be after start date' };
+  }
+
+  const timeDifference = end.getTime() - start.getTime();
+  const numberOfDays = Math.ceil(timeDifference / (1000 * 3600 * 24));
+
+  if (numberOfDays > 365) {
+    return { isValid: false, message: 'Booking cannot exceed 365 days' };
+  }
+
+  return { isValid: true, numberOfDays };
+};
+
 // Create a new booking
 const createBooking = async (req, res) => {
-  const { property_id, start_date, end_date, total_price } = req.body;
+  const { property_id, start_date, end_date, guests } = req.body;
   const user_ID = req.user.id;
 
   try {
+    // Validate required fields
+    if (!property_id || !start_date || !end_date) {
+      return res.status(400).json({
+        message: 'Property ID, start date, and end date are required'
+      });
+    }
+
+    // Validate booking dates
+    const dateValidation = validateBookingDates(start_date, end_date);
+    if (!dateValidation.isValid) {
+      return res.status(400).json({ message: dateValidation.message });
+    }
+
     // Check if property exists
-    const propertyCheck = await db.query('SELECT * FROM Properties WHERE property_id = @param0', [property_id]);
+    const propertyCheck = await db.query(
+      'SELECT * FROM Properties WHERE property_id = @param0',
+      [property_id]
+    );
 
     if (propertyCheck.recordset.length === 0) {
       return res.status(404).json({ message: 'Property not found' });
     }
 
+    const property = propertyCheck.recordset[0];
+
     // Check if user is trying to book their own property
-    if (propertyCheck.recordset[0].user_id === user_ID) {
+    if (property.user_id === user_ID) {
       return res.status(400).json({ message: 'You cannot book your own property' });
+    }
+
+    // Validate guest count
+    if (guests && guests > property.guest) {
+      return res.status(400).json({
+        message: `Property can accommodate maximum ${property.guest} guests`
+      });
     }
 
     // Check if property is available for the requested dates
@@ -119,26 +178,43 @@ const createBooking = async (req, res) => {
     );
 
     if (bookingCheck.recordset.length > 0) {
-      return res.status(400).json({ message: 'Property is not available for the selected dates' });
+      return res.status(400).json({
+        message: 'Property is not available for the selected dates'
+      });
     }
+
+    // Calculate total amount
+    const totalAmount = calculateTotalAmount(start_date, end_date, property.rent_per_day);
 
     // Get the next booking ID
     const maxIdResult = await db.query('SELECT MAX(booking_id) as max_id FROM Booking');
     const nextId = (maxIdResult.recordset[0].max_id || 0) + 1;
 
     // Create booking
-    const currentDate = new Date().toISOString().split('T')[0]; // Get current date in YYYY-MM-DD format
+    const currentDate = new Date().toISOString().split('T')[0];
 
     const result = await db.query(
-      `INSERT INTO Booking (booking_id, property_id, user_ID, status, booking_date, start_date, end_date)
-       VALUES (@param0, @param1, @param2, 'Pending', @param3, @param4, @param5);
-       SELECT * FROM Booking WHERE booking_id = @param0`,
-      [nextId, property_id, user_ID, currentDate, start_date, end_date]
+      `INSERT INTO Booking (booking_id, property_id, user_ID, status, booking_date, start_date, end_date, total_amount, guests)
+       VALUES (@param0, @param1, @param2, 'Pending', @param3, @param4, @param5, @param6, @param7);
+       SELECT b.*, p.title, p.city, p.rent_per_day, p.address, p.property_type,
+              u.name as host_name,
+              (SELECT TOP 1 image_url FROM Pictures WHERE property_id = p.property_id) as property_image
+       FROM Booking b
+       JOIN Properties p ON b.property_id = p.property_id
+       JOIN Users u ON p.user_id = u.user_ID
+       WHERE b.booking_id = @param0`,
+      [nextId, property_id, user_ID, currentDate, start_date, end_date, totalAmount, guests || property.guest]
     );
+
+    const booking = result.recordset[0];
 
     res.status(201).json({
       message: 'Booking created successfully',
-      booking: result.recordset[0]
+      booking: {
+        ...booking,
+        number_of_days: dateValidation.numberOfDays,
+        total_amount: totalAmount
+      }
     });
   } catch (error) {
     console.error('Create booking error:', error);

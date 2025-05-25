@@ -24,12 +24,8 @@ echo Checking database tables...
 docker exec airbnb-sqlserver bash -c "if [ -f /opt/mssql-tools/bin/sqlcmd ]; then /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'Admin@123' -d airbnb -Q 'SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = \"BASE TABLE\" ORDER BY TABLE_NAME'; else echo 'sqlcmd not found. SQL Server tools may not be installed yet.'; fi"
 
 echo.
-echo Checking sample data in Users table...
-docker exec airbnb-sqlserver bash -c "if [ -f /opt/mssql-tools/bin/sqlcmd ]; then /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'Admin@123' -d airbnb -Q 'SELECT user_ID, name, email FROM Users'; else echo 'sqlcmd not found. SQL Server tools may not be installed yet.'; fi"
-
-echo.
-echo Checking sample data in Properties table...
-docker exec airbnb-sqlserver bash -c "if [ -f /opt/mssql-tools/bin/sqlcmd ]; then /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'Admin@123' -d airbnb -Q 'SELECT property_id, title, property_type, city FROM Properties'; else echo 'sqlcmd not found. SQL Server tools may not be installed yet.'; fi"
+echo Checking if tables are empty (no dummy data)...
+docker exec airbnb-sqlserver bash -c "if [ -f /opt/mssql-tools/bin/sqlcmd ]; then /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'Admin@123' -d airbnb -Q 'SELECT COUNT(*) as Users_Count FROM Users; SELECT COUNT(*) as Properties_Count FROM Properties;'; else echo 'sqlcmd not found. SQL Server tools may not be installed yet.'; fi"
 
 echo.
 echo Database schema check complete.

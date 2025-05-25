@@ -96,17 +96,4 @@ CREATE TABLE messages (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Insert some default amenities
-INSERT INTO amenities (name, icon) VALUES
-  ('WiFi', 'wifi'),
-  ('Air Conditioning', 'ac'),
-  ('Heating', 'heating'),
-  ('Kitchen', 'kitchen'),
-  ('TV', 'tv'),
-  ('Washer', 'washer'),
-  ('Dryer', 'dryer'),
-  ('Free Parking', 'parking'),
-  ('Pool', 'pool'),
-  ('Hot Tub', 'hot-tub'),
-  ('Gym', 'gym'),
-  ('Workspace', 'workspace');
+-- Amenities table is ready for data insertion via API

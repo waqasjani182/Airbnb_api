@@ -85,6 +85,94 @@ const fetchRelatedPropertyData = async (properties) => {
   return enhancedProperties;
 };
 
+// Helper function to validate property type specific requirements
+const validatePropertyTypeRequirements = (property_type, total_bedrooms, total_rooms, total_beds) => {
+  if (!property_type) {
+    return { isValid: false, message: 'property_type is required' };
+  }
+
+  if (property_type === 'House') {
+    if (!total_bedrooms || total_bedrooms <= 0) {
+      return {
+        isValid: false,
+        message: 'total_bedrooms is required and must be greater than 0 for House properties'
+      };
+    }
+  } else if (property_type === 'Flat' || property_type === 'Apartment') {
+    if (!total_rooms || total_rooms <= 0) {
+      return {
+        isValid: false,
+        message: 'total_rooms is required and must be greater than 0 for Flat/Apartment properties'
+      };
+    }
+  } else if (property_type === 'Room') {
+    if (!total_beds || total_beds <= 0) {
+      return {
+        isValid: false,
+        message: 'total_beds is required and must be greater than 0 for Room properties'
+      };
+    }
+  }
+
+  return { isValid: true };
+};
+
+// Helper function to insert property type specific data
+const insertPropertyTypeSpecificData = async (transactionId, property_type, property_id, total_bedrooms, total_rooms, total_beds) => {
+  if (property_type === 'House') {
+    await db.queryWithinTransaction(
+      transactionId,
+      'INSERT INTO House (property_id, total_bedrooms) VALUES ($1, $2)',
+      [property_id, total_bedrooms]
+    );
+  } else if (property_type === 'Flat' || property_type === 'Apartment') {
+    await db.queryWithinTransaction(
+      transactionId,
+      'INSERT INTO Flat (property_id, total_rooms) VALUES ($1, $2)',
+      [property_id, total_rooms]
+    );
+  } else if (property_type === 'Room') {
+    await db.queryWithinTransaction(
+      transactionId,
+      'INSERT INTO Room (property_id, total_beds) VALUES ($1, $2)',
+      [property_id, total_beds]
+    );
+  }
+};
+
+// Helper function to fetch property type specific details
+const fetchPropertyTypeDetails = async (property_type, property_id) => {
+  let propertyTypeDetails = {};
+
+  if (property_type === 'House') {
+    const houseResult = await db.query(
+      'SELECT * FROM House WHERE property_id = $1',
+      [property_id]
+    );
+    if (houseResult.recordset.length > 0) {
+      propertyTypeDetails = houseResult.recordset[0];
+    }
+  } else if (property_type === 'Flat' || property_type === 'Apartment') {
+    const flatResult = await db.query(
+      'SELECT * FROM Flat WHERE property_id = $1',
+      [property_id]
+    );
+    if (flatResult.recordset.length > 0) {
+      propertyTypeDetails = flatResult.recordset[0];
+    }
+  } else if (property_type === 'Room') {
+    const roomResult = await db.query(
+      'SELECT * FROM Room WHERE property_id = $1',
+      [property_id]
+    );
+    if (roomResult.recordset.length > 0) {
+      propertyTypeDetails = roomResult.recordset[0];
+    }
+  }
+
+  return propertyTypeDetails;
+};
+
 // Get all properties with pagination and filtering
 const getAllProperties = async (req, res) => {
   try {
@@ -260,33 +348,7 @@ const getPropertyById = async (req, res) => {
     }
 
     // Get property type specific details
-    let propertyTypeDetails = {};
-
-    if (property.property_type === 'House') {
-      const houseResult = await db.query(
-        'SELECT * FROM House WHERE property_id = $1',
-        [req.params.id]
-      );
-      if (houseResult.recordset.length > 0) {
-        propertyTypeDetails = houseResult.recordset[0];
-      }
-    } else if (property.property_type === 'Flat' || property.property_type === 'Apartment') {
-      const flatResult = await db.query(
-        'SELECT * FROM Flat WHERE property_id = $1',
-        [req.params.id]
-      );
-      if (flatResult.recordset.length > 0) {
-        propertyTypeDetails = flatResult.recordset[0];
-      }
-    } else if (property.property_type === 'Room') {
-      const roomResult = await db.query(
-        'SELECT * FROM Room WHERE property_id = $1',
-        [req.params.id]
-      );
-      if (roomResult.recordset.length > 0) {
-        propertyTypeDetails = roomResult.recordset[0];
-      }
-    }
+    const propertyTypeDetails = await fetchPropertyTypeDetails(property.property_type, req.params.id);
 
     res.json({
       property: {
@@ -326,6 +388,12 @@ const createProperty = async (req, res) => {
   // Get user ID from auth middleware
   const userId = req.user.user_ID || req.user.id;
 
+  // Validate property type specific requirements
+  const validation = validatePropertyTypeRequirements(property_type, total_bedrooms, total_rooms, total_beds);
+  if (!validation.isValid) {
+    return res.status(400).json({ message: validation.message });
+  }
+
   try {
     // Start a transaction
     const transactionId = await db.beginTransaction();
@@ -356,25 +424,7 @@ const createProperty = async (req, res) => {
     const property = propertyResult.recordset[0];
 
     // Add property type specific details
-    if (property_type === 'House' && total_bedrooms) {
-      await db.queryWithinTransaction(
-        transactionId,
-        'INSERT INTO House (property_id, total_bedrooms) VALUES ($1, $2)',
-        [property.property_id, total_bedrooms]
-      );
-    } else if ((property_type === 'Flat' || property_type === 'Apartment') && total_rooms) {
-      await db.queryWithinTransaction(
-        transactionId,
-        'INSERT INTO Flat (property_id, total_rooms) VALUES ($1, $2)',
-        [property.property_id, total_rooms]
-      );
-    } else if (property_type === 'Room' && total_beds) {
-      await db.queryWithinTransaction(
-        transactionId,
-        'INSERT INTO Room (property_id, total_beds) VALUES ($1, $2)',
-        [property.property_id, total_beds]
-      );
-    }
+    await insertPropertyTypeSpecificData(transactionId, property_type, nextPropertyId, total_bedrooms, total_rooms, total_beds);
 
     // Handle uploaded image files if present
     const uploadedImages = [];
@@ -392,7 +442,7 @@ const createProperty = async (req, res) => {
         const imageResult = await db.queryWithinTransaction(
           transactionId,
           'INSERT INTO Pictures (property_id, image_url) OUTPUT INSERTED.* VALUES ($1, $2)',
-          [property.property_id, imageUrl]
+          [nextPropertyId, imageUrl]
         );
 
         uploadedImages.push(imageResult.recordset[0]);
@@ -409,11 +459,11 @@ const createProperty = async (req, res) => {
         await db.queryWithinTransaction(
           transactionId,
           'INSERT INTO Pictures (property_id, image_url) VALUES ($1, $2)',
-          [property.property_id, images[i].url]
+          [nextPropertyId, images[i].url]
         );
 
         uploadedImages.push({
-          property_id: property.property_id,
+          property_id: nextPropertyId,
           image_url: images[i].url
         });
       }
@@ -430,7 +480,7 @@ const createProperty = async (req, res) => {
           await db.queryWithinTransaction(
             transactionId,
             'INSERT INTO Property_Facilities (property_id, facility_id) VALUES ($1, $2)',
-            [property.property_id, facilityId]
+            [nextPropertyId, facilityId]
           );
         }
       }
@@ -455,33 +505,7 @@ const createProperty = async (req, res) => {
     }
 
     // Get property type specific details
-    let propertyTypeDetails = {};
-
-    if (property_type === 'House') {
-      const houseResult = await db.query(
-        'SELECT * FROM House WHERE property_id = $1',
-        [property.property_id]
-      );
-      if (houseResult.recordset.length > 0) {
-        propertyTypeDetails = houseResult.recordset[0];
-      }
-    } else if (property_type === 'Flat' || property_type === 'Apartment') {
-      const flatResult = await db.query(
-        'SELECT * FROM Flat WHERE property_id = $1',
-        [property.property_id]
-      );
-      if (flatResult.recordset.length > 0) {
-        propertyTypeDetails = flatResult.recordset[0];
-      }
-    } else if (property_type === 'Room') {
-      const roomResult = await db.query(
-        'SELECT * FROM Room WHERE property_id = $1',
-        [property.property_id]
-      );
-      if (roomResult.recordset.length > 0) {
-        propertyTypeDetails = roomResult.recordset[0];
-      }
-    }
+    const propertyTypeDetails = await fetchPropertyTypeDetails(property_type, nextPropertyId);
 
     // Add related data
     const enhancedProperty = {
