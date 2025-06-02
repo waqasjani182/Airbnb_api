@@ -100,7 +100,8 @@ async function resetDatabase() {
         email VARCHAR(255),
         address VARCHAR(255),
         phone_No VARCHAR(20),
-        profile_image VARCHAR(255)
+        profile_image VARCHAR(255),
+        is_admin BIT DEFAULT 0
       );
     `;
     console.log('Created Users table');
@@ -273,7 +274,32 @@ async function resetDatabase() {
     // Property_Facility_Rating table is ready for data insertion via API
     console.log('Property_Facility_Rating table created and ready for data');
 
-    console.log('Database reset and recreated successfully');
+    // Insert sample data
+    console.log('Inserting sample data...');
+
+    // Insert admin user and sample users
+    await sql.query`
+      INSERT INTO Users (user_ID, password, name, email, address, phone_No, profile_image, is_admin)
+      VALUES
+      (1, 'admin123', 'Administrator', 'admin@admin.com', 'Admin Office', '1234567890', NULL, 1),
+      (2, 'password123', 'John Doe', 'john@example.com', '123 Main St', '555-1234', 'http://localhost:3004/uploads/profile-images/default-profile.jpg', 0),
+      (3, 'password123', 'Jane Smith', 'jane@example.com', '456 Oak Ave', '555-5678', 'http://localhost:3004/uploads/profile-images/default-profile.jpg', 0),
+      (4, 'password123', 'Bob Johnson', 'bob@example.com', '789 Pine Rd', '555-9012', 'http://localhost:3004/uploads/profile-images/default-profile.jpg', 0);
+    `;
+    console.log('Inserted sample users including admin');
+
+    // Insert sample facilities
+    await sql.query`
+      INSERT INTO Facilities (facility_id, facility_type)
+      VALUES
+      (1, 'WiFi'), (2, 'Air Conditioning'), (3, 'Heating'), (4, 'Kitchen'), (5, 'Washing Machine'),
+      (6, 'TV'), (7, 'Parking'), (8, 'Pool'), (9, 'Gym'), (10, 'Balcony'),
+      (11, 'Garden'), (12, 'Fireplace'), (13, 'Hot Tub'), (14, 'BBQ Grill'), (15, 'Elevator'),
+      (16, 'Wheelchair Accessible'), (17, 'Pet Friendly'), (18, 'Smoking Allowed'), (19, 'Family Friendly'), (20, 'Business Center');
+    `;
+    console.log('Inserted sample facilities');
+
+    console.log('Database reset and recreated successfully with sample data');
     await sql.close();
     return true;
   } catch (error) {

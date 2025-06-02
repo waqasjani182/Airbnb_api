@@ -148,11 +148,118 @@ const uploadUserProfileImage = (req, res) => {
   });
 };
 
+// Get user's properties
+const getUserProperties = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const result = await db.query(
+      `SELECT p.*,
+       (SELECT TOP 1 image_url FROM Pictures WHERE property_id = p.property_id) as primary_image,
+       (SELECT COUNT(*) FROM Booking WHERE property_id = p.property_id) as booking_count
+       FROM Properties p
+       WHERE p.user_id = $1
+       ORDER BY p.property_id DESC`,
+      [userId]
+    );
+
+    res.json({ properties: result.recordset });
+  } catch (error) {
+    console.error('Get user properties error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Update user profile with optional image upload
+const updateUserProfileWithImage = (req, res) => {
+  uploadProfileImage(req, res, async (err) => {
+    if (err) {
+      return res.status(400).json({
+        message: 'Error uploading profile image',
+        error: err.message
+      });
+    }
+
+    try {
+      const userId = req.user.id;
+      const { name, email, address, phone_No } = req.body;
+
+      let profileImageUrl = null;
+
+      // If a file was uploaded, construct the URL
+      if (req.file) {
+        const relativePath = `/uploads/profile-images/${req.file.filename}`;
+        profileImageUrl = `${req.app.locals.BASE_URL}${relativePath}`;
+      }
+
+      // Build update query dynamically based on provided fields
+      let updateFields = [];
+      let params = [];
+      let paramIndex = 0;
+
+      if (name) {
+        updateFields.push(`name = @param${paramIndex}`);
+        params.push(name);
+        paramIndex++;
+      }
+      if (email) {
+        updateFields.push(`email = @param${paramIndex}`);
+        params.push(email);
+        paramIndex++;
+      }
+      if (address) {
+        updateFields.push(`address = @param${paramIndex}`);
+        params.push(address);
+        paramIndex++;
+      }
+      if (phone_No) {
+        updateFields.push(`phone_No = @param${paramIndex}`);
+        params.push(phone_No);
+        paramIndex++;
+      }
+      if (profileImageUrl) {
+        updateFields.push(`profile_image = @param${paramIndex}`);
+        params.push(profileImageUrl);
+        paramIndex++;
+      }
+
+      if (updateFields.length === 0) {
+        return res.status(400).json({ message: 'No fields to update' });
+      }
+
+      // Add userId as the last parameter
+      params.push(userId);
+
+      const result = await db.query(
+        `UPDATE Users
+         SET ${updateFields.join(', ')}
+         OUTPUT INSERTED.*
+         WHERE user_ID = @param${paramIndex}`,
+        params
+      );
+
+      if (result.recordset.length === 0) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      res.json({
+        message: 'User profile updated successfully',
+        user: result.recordset[0]
+      });
+    } catch (error) {
+      console.error('Update user profile with image error:', error);
+      res.status(500).json({ message: 'Server error' });
+    }
+  });
+};
+
 module.exports = {
   getAllUsers,
   getUserById,
   updateUser,
   changePassword,
   deleteUser,
-  uploadUserProfileImage
+  uploadUserProfileImage,
+  getUserProperties,
+  updateUserProfileWithImage
 };

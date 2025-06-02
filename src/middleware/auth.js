@@ -16,7 +16,11 @@ const auth = (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     // Add user from payload
-    req.user = decoded;
+    req.user = {
+      id: decoded.user_ID,
+      user_ID: decoded.user_ID,
+      email: decoded.email
+    };
     next();
   } catch (error) {
     res.status(401).json({ message: 'Token is not valid' });
@@ -31,13 +35,30 @@ const isHost = (req, res, next) => {
 };
 
 // Middleware to check if user is an admin
-// In our new schema, we don't have an is_admin field, so we'll use a specific user ID as admin
-const isAdmin = (req, res, next) => {
-  // For now, we'll consider user with ID 1 as admin
-  if (req.user.user_ID !== 1) {
-    return res.status(403).json({ message: 'Access denied. Admin privileges required.' });
+const isAdmin = async (req, res, next) => {
+  try {
+    const db = require('../config/db');
+    const userId = req.user.user_ID;
+
+    // Check if user is admin in database
+    const result = await db.query(
+      'SELECT is_admin FROM Users WHERE user_ID = $1',
+      [userId]
+    );
+
+    if (result.recordset.length === 0) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    if (!result.recordset[0].is_admin) {
+      return res.status(403).json({ message: 'Access denied. Admin privileges required.' });
+    }
+
+    next();
+  } catch (error) {
+    console.error('Admin check error:', error);
+    res.status(500).json({ message: 'Server error during admin verification.' });
   }
-  next();
 };
 
 module.exports = { auth, isHost, isAdmin };

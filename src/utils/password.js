@@ -1,14 +1,11 @@
-const bcrypt = require('bcrypt');
-
-// Hash password
+// No encryption - store passwords as plain text
 const hashPassword = async (password) => {
-  const salt = await bcrypt.genSalt(10);
-  return await bcrypt.hash(password, salt);
+  return password; // Return password as-is without hashing
 };
 
-// Compare password
-const comparePassword = async (password, hashedPassword) => {
-  return await bcrypt.compare(password, hashedPassword);
+// Compare password - direct string comparison
+const comparePassword = async (password, storedPassword) => {
+  return password === storedPassword; // Direct comparison
 };
 
 module.exports = {

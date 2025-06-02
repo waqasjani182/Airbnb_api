@@ -7,7 +7,9 @@ CREATE TABLE Users (
     name VARCHAR(255),
     email VARCHAR(255),
     address VARCHAR(255),
-    phone_No VARCHAR(20)
+    phone_No VARCHAR(20),
+    profile_image VARCHAR(255),
+    is_admin BIT DEFAULT 0
 );
 
 -- Users table is ready for data insertion via API

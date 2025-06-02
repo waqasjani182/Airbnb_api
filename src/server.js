@@ -13,6 +13,7 @@ const reviewRoutes = require('./routes/reviews');
 const authRoutes = require('./routes/auth');
 const amenityRoutes = require('./routes/amenities');
 const facilityRoutes = require('./routes/facilities');
+const adminRoutes = require('./routes/admin');
 
 // Initialize express app
 const app = express();
@@ -40,6 +41,7 @@ app.use('/api/bookings', bookingRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/amenities', amenityRoutes);
 app.use('/api/facilities', facilityRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Root route
 app.get('/', (req, res) => {

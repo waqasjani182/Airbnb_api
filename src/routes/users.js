@@ -6,26 +6,34 @@ const {
   updateUser,
   changePassword,
   deleteUser,
-  uploadUserProfileImage
+  uploadUserProfileImage,
+  getUserProperties,
+  updateUserProfileWithImage
 } = require('../controllers/users');
 const { auth } = require('../middleware/auth');
 
 // Get all users (admin only in a real app)
 router.get('/', getAllUsers);
 
-// Get user by ID
+// Change password (protected) - must be before /:id
+router.put('/change-password', auth, changePassword);
+
+// Upload profile image (protected) - must be before /:id
+router.post('/profile-image', auth, uploadUserProfileImage);
+
+// Get user's properties (protected) - must be before /:id
+router.get('/properties', auth, getUserProperties);
+
+// Update user profile with optional image upload (protected) - must be before /:id
+router.put('/profile', auth, updateUserProfileWithImage);
+
+// Get user by ID - must be after specific routes
 router.get('/:id', getUserById);
 
 // Update user (protected)
 router.put('/', auth, updateUser);
 
-// Change password (protected)
-router.put('/change-password', auth, changePassword);
-
 // Delete user (protected)
 router.delete('/', auth, deleteUser);
-
-// Upload profile image (protected)
-router.post('/profile-image', auth, uploadUserProfileImage);
 
 module.exports = router;
