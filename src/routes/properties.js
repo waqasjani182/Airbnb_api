@@ -9,12 +9,10 @@ const {
   updateProperty,
   deleteProperty,
   getPropertiesByHost,
-  searchProperties,
-  uploadSinglePropertyImage,
-  uploadMultiplePropertyImages
+  searchProperties
 } = require('../controllers/properties');
 const { auth, isHost } = require('../middleware/auth');
-const { uploadPropertyImage, uploadPropertyImages } = require('../utils/upload');
+const { uploadPropertyImages } = require('../utils/upload');
 
 // Get all properties (public)
 router.get('/', getAllProperties);
@@ -28,19 +26,44 @@ router.get('/host/:hostId', getPropertiesByHost);
 // Get property by ID (public)
 router.get('/:id', getPropertyById);
 
+// Multer error handling middleware
+const handleMulterError = (err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ message: 'File too large' });
+    }
+    if (err.code === 'LIMIT_FILE_COUNT') {
+      return res.status(400).json({ message: 'Too many files' });
+    }
+    return res.status(400).json({ message: 'File upload error', error: err.message });
+  }
+  if (err.message === 'Only image files are allowed!') {
+    return res.status(400).json({ message: 'Only image files are allowed' });
+  }
+  next(err);
+};
+
 // Create a new property with image upload support (host only)
-router.post('/', auth, isHost, uploadPropertyImages, createProperty);
+router.post('/', auth, isHost, (req, res, next) => {
+  uploadPropertyImages(req, res, (err) => {
+    if (err) {
+      return handleMulterError(err, req, res, next);
+    }
+    next();
+  });
+}, createProperty);
 
 // Update a property with image upload support (host only)
-router.put('/:id', auth, isHost, uploadPropertyImages, updateProperty);
+router.put('/:id', auth, isHost, (req, res, next) => {
+  uploadPropertyImages(req, res, (err) => {
+    if (err) {
+      return handleMulterError(err, req, res, next);
+    }
+    next();
+  });
+}, updateProperty);
 
 // Delete a property (host only)
 router.delete('/:id', auth, isHost, deleteProperty);
-
-// Upload a single property image (host only)
-router.post('/:id/images', auth, isHost, uploadSinglePropertyImage);
-
-// Upload multiple property images (host only)
-router.post('/:id/images/multiple', auth, isHost, uploadMultiplePropertyImages);
 
 module.exports = router;

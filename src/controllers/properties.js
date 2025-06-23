@@ -1,30 +1,30 @@
 const db = require('../config/db');
-const { uploadPropertyImage, uploadPropertyImages } = require('../utils/upload');
 
-// Helper function to fetch related property data (images, facilities, reviews)
+// Helper function to fetch related property data
 const fetchRelatedPropertyData = async (properties) => {
   if (!properties || properties.length === 0) {
     return [];
   }
 
-  const propertyIds = properties.map(property => property.property_id);
+  // Extract property IDs
+  const propertyIds = properties.map(p => p.property_id);
 
-  // Fetch all images for the properties
+  // Fetch images for all properties
   const imagesResult = await db.query(
     `SELECT * FROM Pictures WHERE property_id IN (${propertyIds.map((_, i) => `$${i + 1}`).join(',')})`,
     propertyIds
   );
 
-  // Fetch all facilities (amenities) for the properties
+  // Fetch facilities (amenities) for all properties
   const facilitiesResult = await db.query(
-    `SELECT f.*, pf.property_id
+    `SELECT f.*, pf.property_id 
      FROM Facilities f
      JOIN Property_Facilities pf ON f.facility_id = pf.facility_id
      WHERE pf.property_id IN (${propertyIds.map((_, i) => `$${i + 1}`).join(',')})`,
     propertyIds
   );
 
-  // Fetch all reviews for the properties
+  // Fetch reviews for all properties
   const reviewsResult = await db.query(
     `SELECT br.*, u.name, br.property_id
      FROM Booking_Review br
@@ -69,7 +69,7 @@ const fetchRelatedPropertyData = async (properties) => {
     // Calculate average rating
     let avgRating = 0;
     if (reviews.length > 0) {
-      avgRating = reviews.reduce((sum, review) => sum + (review.property_rating || 0), 0) / reviews.length;
+      avgRating = reviews.reduce((sum, review) => sum + review.property_rating, 0) / reviews.length;
     }
 
     return {
@@ -83,94 +83,6 @@ const fetchRelatedPropertyData = async (properties) => {
   });
 
   return enhancedProperties;
-};
-
-// Helper function to validate property type specific requirements
-const validatePropertyTypeRequirements = (property_type, total_bedrooms, total_rooms, total_beds) => {
-  if (!property_type) {
-    return { isValid: false, message: 'property_type is required' };
-  }
-
-  if (property_type === 'House') {
-    if (!total_bedrooms || total_bedrooms <= 0) {
-      return {
-        isValid: false,
-        message: 'total_bedrooms is required and must be greater than 0 for House properties'
-      };
-    }
-  } else if (property_type === 'Flat' || property_type === 'Apartment') {
-    if (!total_rooms || total_rooms <= 0) {
-      return {
-        isValid: false,
-        message: 'total_rooms is required and must be greater than 0 for Flat/Apartment properties'
-      };
-    }
-  } else if (property_type === 'Room') {
-    if (!total_beds || total_beds <= 0) {
-      return {
-        isValid: false,
-        message: 'total_beds is required and must be greater than 0 for Room properties'
-      };
-    }
-  }
-
-  return { isValid: true };
-};
-
-// Helper function to insert property type specific data
-const insertPropertyTypeSpecificData = async (transactionId, property_type, property_id, total_bedrooms, total_rooms, total_beds) => {
-  if (property_type === 'House') {
-    await db.queryWithinTransaction(
-      transactionId,
-      'INSERT INTO House (property_id, total_bedrooms) VALUES ($1, $2)',
-      [property_id, total_bedrooms]
-    );
-  } else if (property_type === 'Flat' || property_type === 'Apartment') {
-    await db.queryWithinTransaction(
-      transactionId,
-      'INSERT INTO Flat (property_id, total_rooms) VALUES ($1, $2)',
-      [property_id, total_rooms]
-    );
-  } else if (property_type === 'Room') {
-    await db.queryWithinTransaction(
-      transactionId,
-      'INSERT INTO Room (property_id, total_beds) VALUES ($1, $2)',
-      [property_id, total_beds]
-    );
-  }
-};
-
-// Helper function to fetch property type specific details
-const fetchPropertyTypeDetails = async (property_type, property_id) => {
-  let propertyTypeDetails = {};
-
-  if (property_type === 'House') {
-    const houseResult = await db.query(
-      'SELECT * FROM House WHERE property_id = $1',
-      [property_id]
-    );
-    if (houseResult.recordset.length > 0) {
-      propertyTypeDetails = houseResult.recordset[0];
-    }
-  } else if (property_type === 'Flat' || property_type === 'Apartment') {
-    const flatResult = await db.query(
-      'SELECT * FROM Flat WHERE property_id = $1',
-      [property_id]
-    );
-    if (flatResult.recordset.length > 0) {
-      propertyTypeDetails = flatResult.recordset[0];
-    }
-  } else if (property_type === 'Room') {
-    const roomResult = await db.query(
-      'SELECT * FROM Room WHERE property_id = $1',
-      [property_id]
-    );
-    if (roomResult.recordset.length > 0) {
-      propertyTypeDetails = roomResult.recordset[0];
-    }
-  }
-
-  return propertyTypeDetails;
 };
 
 // Get all properties with pagination and filtering
@@ -230,56 +142,54 @@ const getAllProperties = async (req, res) => {
       paramIndex++;
     }
 
-    // Add pagination (SQL Server syntax)
+    // Add pagination
     query += ` ORDER BY p.property_id OFFSET $${paramIndex} ROWS FETCH NEXT $${paramIndex + 1} ROWS ONLY`;
-    queryParams.push(offset, limit);
+    queryParams.push(offset, parseInt(limit));
 
-    // Execute query
     const result = await db.query(query, queryParams);
 
-    // Get total count for pagination
-    const countQuery = `
-      SELECT COUNT(*) as count FROM Properties p
+    // Build count query with the same filters
+    let countQuery = `
+      SELECT COUNT(*) as count
+      FROM Properties p
       WHERE 1=1
     `;
 
-    // Apply the same filters to count query
-    let countQueryParams = [];
+    const countQueryParams = [];
     let countParamIndex = 1;
-    let countQueryWithFilters = countQuery;
 
     if (city) {
-      countQueryWithFilters += ` AND LOWER(p.city) = LOWER($${countParamIndex})`;
+      countQuery += ` AND LOWER(p.city) = LOWER($${countParamIndex})`;
       countQueryParams.push(city);
       countParamIndex++;
     }
 
     if (min_price) {
-      countQueryWithFilters += ` AND p.rent_per_day >= $${countParamIndex}`;
+      countQuery += ` AND p.rent_per_day >= $${countParamIndex}`;
       countQueryParams.push(min_price);
       countParamIndex++;
     }
 
     if (max_price) {
-      countQueryWithFilters += ` AND p.rent_per_day <= $${countParamIndex}`;
+      countQuery += ` AND p.rent_per_day <= $${countParamIndex}`;
       countQueryParams.push(max_price);
       countParamIndex++;
     }
 
     if (bedrooms) {
       // Check if property is a house
-      countQueryWithFilters += ` AND EXISTS (SELECT 1 FROM House h WHERE h.property_id = p.property_id AND h.total_bedrooms >= $${countParamIndex})`;
+      countQuery += ` AND EXISTS (SELECT 1 FROM House h WHERE h.property_id = p.property_id AND h.total_bedrooms >= $${countParamIndex})`;
       countQueryParams.push(bedrooms);
       countParamIndex++;
     }
 
     if (property_type) {
-      countQueryWithFilters += ` AND LOWER(p.property_type) = LOWER($${countParamIndex})`;
+      countQuery += ` AND LOWER(p.property_type) = LOWER($${countParamIndex})`;
       countQueryParams.push(property_type);
       countParamIndex++;
     }
 
-    const countResult = await db.query(countQueryWithFilters, countQueryParams);
+    const countResult = await db.query(countQuery, countQueryParams);
     const totalProperties = parseInt(countResult.recordset[0].count);
 
     // Fetch related data for properties
@@ -324,7 +234,7 @@ const getPropertyById = async (req, res) => {
       [req.params.id]
     );
 
-    // Get property facilities (amenities)
+    // Get property facilities
     const facilitiesResult = await db.query(
       `SELECT f.* FROM Facilities f
        JOIN Property_Facilities pf ON f.facility_id = pf.facility_id
@@ -344,16 +254,12 @@ const getPropertyById = async (req, res) => {
     // Calculate average rating
     let avgRating = 0;
     if (reviewsResult.recordset.length > 0) {
-      avgRating = reviewsResult.recordset.reduce((sum, review) => sum + (review.property_rating || 0), 0) / reviewsResult.recordset.length;
+      avgRating = reviewsResult.recordset.reduce((sum, review) => sum + review.property_rating, 0) / reviewsResult.recordset.length;
     }
-
-    // Get property type specific details
-    const propertyTypeDetails = await fetchPropertyTypeDetails(property.property_type, req.params.id);
 
     res.json({
       property: {
         ...property,
-        ...propertyTypeDetails,
         images: imagesResult.recordset,
         facilities: facilitiesResult.recordset,
         reviews: reviewsResult.recordset,
@@ -367,419 +273,353 @@ const getPropertyById = async (req, res) => {
   }
 };
 
-// Create a new property
-const createProperty = async (req, res) => {
-  const {
-    title,
-    description,
-    address,
-    city,
-    latitude,
-    longitude,
-    rent_per_day,
-    property_type,
-    guest,
-    total_bedrooms,
-    total_rooms,
-    total_beds,
-    facilities
-  } = req.body;
-
-  // Get user ID from auth middleware
-  const userId = req.user.user_ID || req.user.id;
-
-  // Validate property type specific requirements
-  const validation = validatePropertyTypeRequirements(property_type, total_bedrooms, total_rooms, total_beds);
-  if (!validation.isValid) {
-    return res.status(400).json({ message: validation.message });
-  }
-
+// Search properties
+const searchProperties = async (req, res) => {
   try {
-    // Start a transaction
-    const transactionId = await db.beginTransaction();
+    const { q, city, min_price, max_price, property_type } = req.query;
 
-    // Get the next available property_id
-    const maxIdResult = await db.queryWithinTransaction(
-      transactionId,
-      'SELECT MAX(property_id) as max_id FROM Properties'
-    );
+    let query = `
+      SELECT p.*, u.name as host_name
+      FROM Properties p
+      JOIN Users u ON p.user_id = u.user_ID
+      WHERE 1=1
+    `;
 
-    const nextPropertyId = (maxIdResult.recordset[0].max_id || 0) + 1;
+    const queryParams = [];
+    let paramIndex = 1;
 
-    // Create property
-    const propertyResult = await db.queryWithinTransaction(
-      transactionId,
-      `INSERT INTO Properties
-       (property_id, user_id, property_type, rent_per_day, address, city,
-        longitude, latitude, title, description, guest)
-       OUTPUT INSERTED.*
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-      [
-        nextPropertyId, userId, property_type, rent_per_day, address, city,
-        longitude, latitude, title, description, guest
-      ]
-    );
-
-    // SQL Server returns recordset instead of rows
-    const property = propertyResult.recordset[0];
-
-    // Add property type specific details
-    await insertPropertyTypeSpecificData(transactionId, property_type, nextPropertyId, total_bedrooms, total_rooms, total_beds);
-
-    // Handle uploaded image files if present
-    const uploadedImages = [];
-    if (req.files && req.files.property_images) {
-      const imageFiles = Array.isArray(req.files.property_images)
-        ? req.files.property_images
-        : [req.files.property_images];
-
-      for (let i = 0; i < imageFiles.length; i++) {
-        const file = imageFiles[i];
-        const relativePath = `/uploads/property-images/${file.filename}`;
-        const imageUrl = `${req.app.locals.BASE_URL}${relativePath}`;
-
-        // Insert image into database
-        const imageResult = await db.queryWithinTransaction(
-          transactionId,
-          'INSERT INTO Pictures (property_id, image_url) OUTPUT INSERTED.* VALUES ($1, $2)',
-          [nextPropertyId, imageUrl]
-        );
-
-        uploadedImages.push(imageResult.recordset[0]);
-      }
+    if (q) {
+      query += ` AND (LOWER(p.title) LIKE LOWER($${paramIndex}) OR LOWER(p.description) LIKE LOWER($${paramIndex + 1}))`;
+      queryParams.push(`%${q}%`, `%${q}%`);
+      paramIndex += 2;
     }
 
-    // Handle image URLs passed in request body
-    if (req.body.images && req.body.images.length > 0) {
-      const images = typeof req.body.images === 'string'
-        ? JSON.parse(req.body.images)
-        : req.body.images;
-
-      for (let i = 0; i < images.length; i++) {
-        await db.queryWithinTransaction(
-          transactionId,
-          'INSERT INTO Pictures (property_id, image_url) VALUES ($1, $2)',
-          [nextPropertyId, images[i].url]
-        );
-
-        uploadedImages.push({
-          property_id: nextPropertyId,
-          image_url: images[i].url
-        });
-      }
+    if (city) {
+      query += ` AND LOWER(p.city) = LOWER($${paramIndex})`;
+      queryParams.push(city);
+      paramIndex++;
     }
 
-    // Add property facilities
-    if (facilities) {
-      const facilityIds = typeof facilities === 'string'
-        ? JSON.parse(facilities)
-        : facilities;
-
-      if (Array.isArray(facilityIds) && facilityIds.length > 0) {
-        for (const facilityId of facilityIds) {
-          await db.queryWithinTransaction(
-            transactionId,
-            'INSERT INTO Property_Facilities (property_id, facility_id) VALUES ($1, $2)',
-            [nextPropertyId, facilityId]
-          );
-        }
-      }
+    if (min_price) {
+      query += ` AND p.rent_per_day >= $${paramIndex}`;
+      queryParams.push(min_price);
+      paramIndex++;
     }
 
-    // Commit transaction
-    await db.commitTransaction(transactionId);
-
-    // Get facilities data
-    let facilitiesData = [];
-    if (facilities) {
-      const facilityIds = typeof facilities === 'string'
-        ? JSON.parse(facilities)
-        : facilities;
-
-      if (Array.isArray(facilityIds) && facilityIds.length > 0) {
-        facilitiesData = await db.query(
-          `SELECT f.* FROM Facilities f WHERE f.facility_id IN (${facilityIds.map((_, i) => `$${i + 1}`).join(',')})`,
-          facilityIds
-        ).then(result => result.recordset);
-      }
+    if (max_price) {
+      query += ` AND p.rent_per_day <= $${paramIndex}`;
+      queryParams.push(max_price);
+      paramIndex++;
     }
 
-    // Get property type specific details
-    const propertyTypeDetails = await fetchPropertyTypeDetails(property_type, nextPropertyId);
+    if (property_type) {
+      query += ` AND LOWER(p.property_type) = LOWER($${paramIndex})`;
+      queryParams.push(property_type);
+      paramIndex++;
+    }
 
-    // Add related data
-    const enhancedProperty = {
-      ...property,
-      ...propertyTypeDetails,
-      images: uploadedImages,
-      facilities: facilitiesData,
-      reviews: [],
-      avg_rating: 0,  // New property has no reviews
-      review_count: 0
-    };
+    query += ` ORDER BY p.property_id`;
 
-    res.status(201).json({
-      message: 'Property created successfully',
-      property: enhancedProperty
-    });
+    const result = await db.query(query, queryParams);
+    const enhancedProperties = await fetchRelatedPropertyData(result.recordset);
+
+    res.json({ properties: enhancedProperties });
   } catch (error) {
-    // Rollback transaction on error
-    try {
-      if (error.transactionId) {
-        await db.rollbackTransaction(error.transactionId);
-      }
-    } catch (rollbackError) {
-      console.error('Rollback error:', rollbackError);
-    }
-    console.error('Create property error:', error);
+    console.error('Search properties error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
 
-// Update a property
-const updateProperty = async (req, res) => {
-  const {
-    title,
-    description,
-    address,
-    city,
-    state,
-    country,
-    zip_code,
-    latitude,
-    longitude,
-    price_per_night,
-    bedrooms,
-    bathrooms,
-    max_guests,
-    property_type,
-    amenities
-  } = req.body;
-
-  const propertyId = req.params.id;
-  const hostId = req.user.id;
-
+// Get properties by host ID
+const getPropertiesByHost = async (req, res) => {
   try {
-    // Get current property data
-    const currentPropertyResult = await db.query(
-      'SELECT * FROM properties WHERE id = $1 AND host_id = $2',
-      [propertyId, hostId]
+    const result = await db.query(
+      `SELECT p.*, u.name as host_name
+       FROM Properties p
+       JOIN Users u ON p.user_id = u.user_ID
+       WHERE p.user_id = $1
+       ORDER BY p.property_id DESC`,
+      [req.params.hostId]
     );
 
-    if (currentPropertyResult.recordset.length === 0) {
-      return res.status(404).json({
-        message: 'Property not found or you do not have permission to update it'
-      });
-    }
+    const enhancedProperties = await fetchRelatedPropertyData(result.recordset);
+    res.json({ properties: enhancedProperties });
+  } catch (error) {
+    console.error('Get properties by host error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
 
-    const currentProperty = currentPropertyResult.recordset[0];
+// Create a new property
+const createProperty = async (req, res) => {
+  try {
 
-    // Use current values for any fields not provided in the request
-    const updatedTitle = title !== undefined ? title : currentProperty.title;
-    const updatedDescription = description !== undefined ? description : currentProperty.description;
-    const updatedAddress = address !== undefined ? address : currentProperty.address;
-    const updatedCity = city !== undefined ? city : currentProperty.city;
-    const updatedState = state !== undefined ? state : currentProperty.state;
-    const updatedCountry = country !== undefined ? country : currentProperty.country;
-    const updatedZipCode = zip_code !== undefined ? zip_code : currentProperty.zip_code;
-    const updatedLatitude = latitude !== undefined ? latitude : currentProperty.latitude;
-    const updatedLongitude = longitude !== undefined ? longitude : currentProperty.longitude;
-    const updatedPricePerNight = price_per_night !== undefined ? price_per_night : currentProperty.price_per_night;
-    const updatedBedrooms = bedrooms !== undefined ? bedrooms : currentProperty.bedrooms;
-    const updatedBathrooms = bathrooms !== undefined ? bathrooms : currentProperty.bathrooms;
-    const updatedMaxGuests = max_guests !== undefined ? max_guests : currentProperty.max_guests;
-    const updatedPropertyType = property_type !== undefined ? property_type : currentProperty.property_type;
+    const userId = req.user.user_ID;
+    const {
+      title,
+      description,
+      address,
+      city,
+      latitude,
+      longitude,
+      rent_per_day,
+      property_type,
+      guest,
+      total_bedrooms,
+      total_rooms,
+      total_beds,
+      facilities = []
+    } = req.body;
 
-    // Start a transaction
-    const transactionId = await db.beginTransaction();
+    // Handle facilities - it might come as a string, array, or multiple form fields
+    let facilitiesArray = [];
+    if (facilities) {
 
-    // Update property
-    const propertyResult = await db.queryWithinTransaction(
-      transactionId,
-      `UPDATE properties
-       SET title = $1, description = $2, address = $3, city = $4, state = $5,
-           country = $6, zip_code = $7, latitude = $8, longitude = $9,
-           price_per_night = $10, bedrooms = $11, bathrooms = $12,
-           max_guests = $13, property_type = $14, updated_at = CURRENT_TIMESTAMP
-       OUTPUT INSERTED.*
-       WHERE id = $15 AND host_id = $16`,
-      [
-        updatedTitle, updatedDescription, updatedAddress, updatedCity, updatedState, updatedCountry, updatedZipCode,
-        updatedLatitude, updatedLongitude, updatedPricePerNight, updatedBedrooms, updatedBathrooms,
-        updatedMaxGuests, updatedPropertyType, propertyId, hostId
-      ]
-    );
 
-    // Update amenities if provided
-    if (amenities) {
-      const amenityIds = typeof amenities === 'string'
-        ? JSON.parse(amenities)
-        : amenities;
+      if (typeof facilities === 'string') {
+        // Handle different string formats
+        if (facilities.startsWith('[') && facilities.endsWith(']')) {
+          try {
+            facilitiesArray = JSON.parse(facilities);
+          } catch (e) {
 
-      if (Array.isArray(amenityIds) && amenityIds.length > 0) {
-        // Remove existing amenities
-        await db.queryWithinTransaction(
-          transactionId,
-          'DELETE FROM property_amenities WHERE property_id = $1',
-          [propertyId]
-        );
-
-        // Add new amenities
-        for (const amenityId of amenityIds) {
-          await db.queryWithinTransaction(
-            transactionId,
-            'INSERT INTO property_amenities (property_id, amenity_id) VALUES ($1, $2)',
-            [propertyId, amenityId]
-          );
-        }
-      }
-    }
-
-    // Handle image updates
-    let shouldUpdateImages = false;
-
-    // Check if there are uploaded files
-    if (req.files && req.files.property_images) {
-      shouldUpdateImages = true;
-    }
-
-    // Check if there are images in the request body
-    if (req.body.images) {
-      shouldUpdateImages = true;
-    }
-
-    if (shouldUpdateImages) {
-      // Remove existing images
-      await db.queryWithinTransaction(
-        transactionId,
-        'DELETE FROM property_images WHERE property_id = $1',
-        [propertyId]
-      );
-
-      // Add uploaded image files if present
-      if (req.files && req.files.property_images) {
-        const imageFiles = Array.isArray(req.files.property_images)
-          ? req.files.property_images
-          : [req.files.property_images];
-
-        for (let i = 0; i < imageFiles.length; i++) {
-          const file = imageFiles[i];
-          const relativePath = `/uploads/property-images/${file.filename}`;
-          const imageUrl = `${req.app.locals.BASE_URL}${relativePath}`;
-
-          // Insert image into database
-          await db.queryWithinTransaction(
-            transactionId,
-            'INSERT INTO property_images (property_id, image_url, is_primary) VALUES ($1, $2, $3)',
-            [propertyId, imageUrl, i === 0] // First image is primary
-          );
-        }
-      }
-
-      // Add image URLs from request body if present
-      if (req.body.images) {
-        const images = typeof req.body.images === 'string'
-          ? JSON.parse(req.body.images)
-          : req.body.images;
-
-        if (Array.isArray(images) && images.length > 0) {
-          // Determine if these should be primary (only if no files were uploaded)
-          const hasUploadedFiles = req.files && req.files.property_images;
-
-          for (let i = 0; i < images.length; i++) {
-            const isPrimary = !hasUploadedFiles && i === 0;
-
-            await db.queryWithinTransaction(
-              transactionId,
-              'INSERT INTO property_images (property_id, image_url, is_primary) VALUES ($1, $2, $3)',
-              [propertyId, images[i].url, isPrimary]
-            );
+            facilitiesArray = [];
+          }
+        } else {
+          // Single facility ID as string
+          const id = parseInt(facilities);
+          if (!isNaN(id)) {
+            facilitiesArray = [id];
           }
         }
+      } else if (Array.isArray(facilities)) {
+        // Multiple form fields or JSON array
+        facilitiesArray = facilities.map(id => parseInt(id)).filter(id => !isNaN(id));
+      }
+
+    }
+
+    // Get the next available property_id
+    const maxIdResult = await db.query('SELECT MAX(property_id) as max_id FROM Properties');
+    const nextPropertyId = (maxIdResult.recordset[0].max_id || 0) + 1;
+
+    // Insert property (matching the actual database schema)
+    const propertyResult = await db.query(
+      `INSERT INTO Properties (property_id, user_id, title, description, address, city, latitude, longitude, rent_per_day, property_type, guest)
+       OUTPUT INSERTED.property_id
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [nextPropertyId, userId, title, description, address, city, latitude, longitude, rent_per_day, property_type, guest]
+    );
+
+    const propertyId = propertyResult.recordset[0].property_id;
+
+    // Handle property type specific tables
+    if (property_type && property_type.toLowerCase() === 'house' && total_bedrooms) {
+      await db.query(
+        'INSERT INTO House (property_id, total_bedrooms) VALUES ($1, $2)',
+        [propertyId, total_bedrooms]
+      );
+    } else if (property_type && property_type.toLowerCase() === 'flat' && total_rooms) {
+      await db.query(
+        'INSERT INTO Flat (property_id, total_rooms) VALUES ($1, $2)',
+        [propertyId, total_rooms]
+      );
+    } else if (property_type && property_type.toLowerCase() === 'room' && total_beds) {
+      await db.query(
+        'INSERT INTO Room (property_id, total_beds) VALUES ($1, $2)',
+        [propertyId, total_beds]
+      );
+    }
+
+    // Handle image uploads
+    try {
+      if (req.files && req.files.property_images && req.files.property_images.length > 0) {
+        const baseUrl = req.app.locals.BASE_URL || 'http://localhost:3004';
+        for (const file of req.files.property_images) {
+          const imageUrl = `${baseUrl}/uploads/property-images/${file.filename}`;
+
+          await db.query(
+            'INSERT INTO Pictures (property_id, image_url) VALUES ($1, $2)',
+            [propertyId, imageUrl]
+          );
+        }
+      }
+    } catch (imageError) {
+      console.error('Error handling image uploads:', imageError);
+      // Don't fail the entire property creation if image upload fails
+      // Just log the error and continue
+    }
+
+    // Handle facilities
+    if (facilitiesArray.length > 0) {
+      for (const facilityId of facilitiesArray) {
+        await db.query(
+          'INSERT INTO Property_Facilities (property_id, facility_id) VALUES ($1, $2)',
+          [propertyId, facilityId]
+        );
       }
     }
 
-    // Commit transaction
-    await db.commitTransaction(transactionId);
 
-    // Get the updated property with all related information
-    const updatedProperty = propertyResult.recordset[0];
-
-    // Get images
-    const imagesResult = await db.query(
-      'SELECT * FROM property_images WHERE property_id = $1 ORDER BY is_primary DESC',
-      [propertyId]
-    );
-
-    // Get amenities
-    const amenitiesResult = await db.query(
-      `SELECT a.* FROM amenities a
-       JOIN property_amenities pa ON a.id = pa.amenity_id
-       WHERE pa.property_id = $1`,
-      [propertyId]
-    );
-
-    // Get reviews
-    const reviewsResult = await db.query(
-      `SELECT r.*, u.first_name, u.last_name, u.profile_image
-       FROM reviews r
-       JOIN users u ON r.guest_id = u.id
-       WHERE r.property_id = $1
-       ORDER BY r.created_at DESC`,
-      [propertyId]
-    );
-
-    // Calculate average rating
-    let avgRating = 0;
-    if (reviewsResult.recordset.length > 0) {
-      avgRating = reviewsResult.recordset.reduce((sum, review) => sum + review.rating, 0) / reviewsResult.recordset.length;
-    }
-
-    // Add related information to the property
-    updatedProperty.images = imagesResult.recordset;
-    updatedProperty.amenities = amenitiesResult.recordset;
-    updatedProperty.reviews = reviewsResult.recordset;
-    updatedProperty.avg_rating = avgRating;
-    updatedProperty.review_count = reviewsResult.recordset.length;
-
-    res.json({
-      message: 'Property updated successfully',
-      property: updatedProperty
+    res.status(201).json({
+      message: 'Property created successfully',
+      property_id: propertyId
     });
   } catch (error) {
-    // Rollback transaction on error
-    try {
-      if (error.transactionId) {
-        await db.rollbackTransaction(error.transactionId);
+    console.error('Create property error:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
+// Update property
+const updateProperty = async (req, res) => {
+  try {
+    const propertyId = req.params.id;
+    const userId = req.user.user_ID;
+    const {
+      title,
+      description,
+      address,
+      city,
+      latitude,
+      longitude,
+      rent_per_day,
+      property_type,
+      guest,
+      total_bedrooms,
+      total_rooms,
+      total_beds,
+      facilities = []
+    } = req.body;
+
+    // Handle facilities - it might come as a string, array, or multiple form fields
+    let facilitiesArray = [];
+    if (facilities) {
+
+
+      if (typeof facilities === 'string') {
+        // Handle different string formats
+        if (facilities.startsWith('[') && facilities.endsWith(']')) {
+          try {
+            facilitiesArray = JSON.parse(facilities);
+          } catch (e) {
+
+            facilitiesArray = [];
+          }
+        } else {
+          // Single facility ID as string
+          const id = parseInt(facilities);
+          if (!isNaN(id)) {
+            facilitiesArray = [id];
+          }
+        }
+      } else if (Array.isArray(facilities)) {
+        // Multiple form fields or JSON array
+        facilitiesArray = facilities.map(id => parseInt(id)).filter(id => !isNaN(id));
       }
-    } catch (rollbackError) {
-      console.error('Rollback error:', rollbackError);
+
     }
+
+    // Check if property belongs to user
+    const propertyCheck = await db.query(
+      'SELECT user_id FROM Properties WHERE property_id = $1',
+      [propertyId]
+    );
+
+    if (propertyCheck.recordset.length === 0) {
+      return res.status(404).json({ message: 'Property not found' });
+    }
+
+    if (propertyCheck.recordset[0].user_id !== userId) {
+      return res.status(403).json({ message: 'Not authorized to update this property' });
+    }
+
+    // Update property
+    await db.query(
+      `UPDATE Properties
+       SET title = $1, description = $2, address = $3, city = $4,
+           latitude = $5, longitude = $6, rent_per_day = $7, property_type = $8, guest = $9
+       WHERE property_id = $10`,
+      [title, description, address, city, latitude, longitude, rent_per_day, property_type, guest, propertyId]
+    );
+
+    // Update property type specific tables
+    if (property_type && property_type.toLowerCase() === 'house' && total_bedrooms) {
+      await db.query('DELETE FROM House WHERE property_id = $1', [propertyId]);
+      await db.query(
+        'INSERT INTO House (property_id, total_bedrooms) VALUES ($1, $2)',
+        [propertyId, total_bedrooms]
+      );
+    } else if (property_type && property_type.toLowerCase() === 'flat' && total_rooms) {
+      await db.query('DELETE FROM Flat WHERE property_id = $1', [propertyId]);
+      await db.query(
+        'INSERT INTO Flat (property_id, total_rooms) VALUES ($1, $2)',
+        [propertyId, total_rooms]
+      );
+    } else if (property_type && property_type.toLowerCase() === 'room' && total_beds) {
+      await db.query('DELETE FROM Room WHERE property_id = $1', [propertyId]);
+      await db.query(
+        'INSERT INTO Room (property_id, total_beds) VALUES ($1, $2)',
+        [propertyId, total_beds]
+      );
+    }
+
+    // Handle new image uploads
+    if (req.files && req.files.property_images) {
+      const baseUrl = req.app.locals.BASE_URL;
+      for (const file of req.files.property_images) {
+        const imageUrl = `${baseUrl}/uploads/property-images/${file.filename}`;
+        await db.query(
+          'INSERT INTO Pictures (property_id, image_url) VALUES ($1, $2)',
+          [propertyId, imageUrl]
+        );
+      }
+    }
+
+    // Update facilities
+    await db.query('DELETE FROM Property_Facilities WHERE property_id = $1', [propertyId]);
+    if (facilitiesArray.length > 0) {
+      for (const facilityId of facilitiesArray) {
+        await db.query(
+          'INSERT INTO Property_Facilities (property_id, facility_id) VALUES ($1, $2)',
+          [propertyId, facilityId]
+        );
+      }
+    }
+
+    res.json({ message: 'Property updated successfully' });
+  } catch (error) {
     console.error('Update property error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
 
-// Delete a property
+// Delete property
 const deleteProperty = async (req, res) => {
-  const propertyId = req.params.id;
-  const hostId = req.user.id;
-
   try {
-    // Check if property exists and belongs to the host
+    const propertyId = req.params.id;
+    const userId = req.user.user_ID;
+
+    // Check if property belongs to user
     const propertyCheck = await db.query(
-      'SELECT * FROM properties WHERE id = $1 AND host_id = $2',
-      [propertyId, hostId]
+      'SELECT user_id FROM Properties WHERE property_id = $1',
+      [propertyId]
     );
 
     if (propertyCheck.recordset.length === 0) {
-      return res.status(404).json({
-        message: 'Property not found or you do not have permission to delete it'
-      });
+      return res.status(404).json({ message: 'Property not found' });
     }
 
-    // Delete property (cascade will delete related records)
-    await db.query('DELETE FROM properties WHERE id = $1', [propertyId]);
+    if (propertyCheck.recordset[0].user_id !== userId) {
+      return res.status(403).json({ message: 'Not authorized to delete this property' });
+    }
+
+    // Delete property (cascading deletes will handle related records)
+    await db.query('DELETE FROM Properties WHERE property_id = $1', [propertyId]);
 
     res.json({ message: 'Property deleted successfully' });
   } catch (error) {
@@ -788,373 +628,17 @@ const deleteProperty = async (req, res) => {
   }
 };
 
-// Get properties by host ID
-const getPropertiesByHost = async (req, res) => {
-  try {
-    const hostId = req.params.hostId;
 
-    const result = await db.query(
-      `SELECT p.*,
-       (SELECT TOP 1 image_url FROM property_images WHERE property_id = p.id AND is_primary = 1) as primary_image,
-       (SELECT AVG(CAST(rating AS FLOAT)) FROM reviews WHERE property_id = p.id) as avg_rating,
-       (SELECT COUNT(*) FROM reviews WHERE property_id = p.id) as review_count
-       FROM properties p
-       WHERE p.host_id = $1
-       ORDER BY p.created_at DESC`,
-      [hostId]
-    );
 
-    // Fetch related data for properties
-    const enhancedProperties = await fetchRelatedPropertyData(result.recordset);
 
-    res.json({ properties: enhancedProperties });
-  } catch (error) {
-    console.error('Get properties by host error:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-};
 
-// Search properties
-const searchProperties = async (req, res) => {
-  try {
-    const {
-      query,
-      page = 1,
-      limit = 10,
-      min_price,
-      max_price,
-      bedrooms,
-      property_type,
-      city,
-      state,
-      country
-    } = req.query;
-
-    if (!query) {
-      return res.status(400).json({ message: 'Search query is required' });
-    }
-
-    const offset = (page - 1) * limit;
-
-    // Build the search query
-    let searchQuery = `
-      SELECT p.*, u.first_name as host_first_name, u.last_name as host_last_name,
-      (SELECT TOP 1 image_url FROM property_images WHERE property_id = p.id AND is_primary = 1) as primary_image,
-      (SELECT AVG(CAST(rating AS FLOAT)) FROM reviews WHERE property_id = p.id) as avg_rating,
-      (SELECT COUNT(*) FROM reviews WHERE property_id = p.id) as review_count
-      FROM properties p
-      JOIN users u ON p.host_id = u.id
-      WHERE (
-        LOWER(p.title) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.description) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.address) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.city) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.state) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.country) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.zip_code) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.property_type) LIKE '%' + LOWER($1) + '%'
-      )
-    `;
-
-    const queryParams = [query];
-    let paramIndex = 2;
-
-    // Add filters
-    if (city) {
-      searchQuery += ` AND LOWER(p.city) = LOWER($${paramIndex})`;
-      queryParams.push(city);
-      paramIndex++;
-    }
-
-    if (state) {
-      searchQuery += ` AND LOWER(p.state) = LOWER($${paramIndex})`;
-      queryParams.push(state);
-      paramIndex++;
-    }
-
-    if (country) {
-      searchQuery += ` AND LOWER(p.country) = LOWER($${paramIndex})`;
-      queryParams.push(country);
-      paramIndex++;
-    }
-
-    if (min_price) {
-      searchQuery += ` AND p.price_per_night >= $${paramIndex}`;
-      queryParams.push(min_price);
-      paramIndex++;
-    }
-
-    if (max_price) {
-      searchQuery += ` AND p.price_per_night <= $${paramIndex}`;
-      queryParams.push(max_price);
-      paramIndex++;
-    }
-
-    if (bedrooms) {
-      searchQuery += ` AND p.bedrooms >= $${paramIndex}`;
-      queryParams.push(bedrooms);
-      paramIndex++;
-    }
-
-    if (property_type) {
-      searchQuery += ` AND LOWER(p.property_type) = LOWER($${paramIndex})`;
-      queryParams.push(property_type);
-      paramIndex++;
-    }
-
-    // Add pagination
-    searchQuery += ` ORDER BY p.created_at DESC OFFSET $${paramIndex} ROWS FETCH NEXT $${paramIndex + 1} ROWS ONLY`;
-    queryParams.push(offset, limit);
-
-    // Execute query
-    const result = await db.query(searchQuery, queryParams);
-
-    // Get total count for pagination
-    let countQuery = `
-      SELECT COUNT(*) as count FROM properties p
-      WHERE (
-        LOWER(p.title) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.description) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.address) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.city) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.state) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.country) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.zip_code) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.property_type) LIKE '%' + LOWER($1) + '%'
-      )
-    `;
-
-    // Apply the same filters to count query
-    let countQueryParams = [query];
-    let countParamIndex = 2;
-
-    if (city) {
-      countQuery += ` AND LOWER(p.city) = LOWER($${countParamIndex})`;
-      countQueryParams.push(city);
-      countParamIndex++;
-    }
-
-    if (state) {
-      countQuery += ` AND LOWER(p.state) = LOWER($${countParamIndex})`;
-      countQueryParams.push(state);
-      countParamIndex++;
-    }
-
-    if (country) {
-      countQuery += ` AND LOWER(p.country) = LOWER($${countParamIndex})`;
-      countQueryParams.push(country);
-      countParamIndex++;
-    }
-
-    if (min_price) {
-      countQuery += ` AND p.price_per_night >= $${countParamIndex}`;
-      countQueryParams.push(min_price);
-      countParamIndex++;
-    }
-
-    if (max_price) {
-      countQuery += ` AND p.price_per_night <= $${countParamIndex}`;
-      countQueryParams.push(max_price);
-      countParamIndex++;
-    }
-
-    if (bedrooms) {
-      countQuery += ` AND p.bedrooms >= $${countParamIndex}`;
-      countQueryParams.push(bedrooms);
-      countParamIndex++;
-    }
-
-    if (property_type) {
-      countQuery += ` AND LOWER(p.property_type) = LOWER($${countParamIndex})`;
-      countQueryParams.push(property_type);
-      countParamIndex++;
-    }
-
-    const countResult = await db.query(countQuery, countQueryParams);
-    const totalProperties = parseInt(countResult.recordset[0].count);
-
-    // Fetch related data for properties
-    const enhancedProperties = await fetchRelatedPropertyData(result.recordset);
-
-    res.json({
-      properties: enhancedProperties,
-      pagination: {
-        total: totalProperties,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        pages: Math.ceil(totalProperties / limit)
-      }
-    });
-  } catch (error) {
-    console.error('Search properties error:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-};
-
-// Upload a single property image
-const uploadSinglePropertyImage = (req, res) => {
-  uploadPropertyImage(req, res, async (err) => {
-    if (err) {
-      return res.status(400).json({
-        message: 'Error uploading property image',
-        error: err.message
-      });
-    }
-
-    // If no file was uploaded
-    if (!req.file) {
-      return res.status(400).json({ message: 'No file uploaded' });
-    }
-
-    try {
-      const propertyId = req.params.id;
-      const hostId = req.user.id;
-
-      // Check if property exists and belongs to the host
-      const propertyResult = await db.query(
-        'SELECT * FROM properties WHERE id = $1 AND host_id = $2',
-        [propertyId, hostId]
-      );
-
-      if (propertyResult.recordset.length === 0) {
-        return res.status(404).json({
-          message: 'Property not found or you do not have permission to update it'
-        });
-      }
-
-      const relativePath = `/uploads/property-images/${req.file.filename}`;
-      const imageUrl = `${req.app.locals.BASE_URL}${relativePath}`;
-      const isPrimary = req.body.is_primary === 'true';
-
-      // If this image is set as primary, update all other images to non-primary
-      if (isPrimary) {
-        await db.query(
-          'UPDATE property_images SET is_primary = 0 WHERE property_id = $1',
-          [propertyId]
-        );
-      }
-
-      // Insert the new image
-      const result = await db.query(
-        'INSERT INTO property_images (property_id, image_url, is_primary) OUTPUT INSERTED.* VALUES ($1, $2, $3)',
-        [propertyId, imageUrl, isPrimary]
-      );
-
-      // Get all property images
-      const imagesResult = await db.query(
-        'SELECT * FROM property_images WHERE property_id = $1 ORDER BY is_primary DESC',
-        [propertyId]
-      );
-
-      res.json({
-        message: 'Property image uploaded successfully',
-        image: result.recordset[0],
-        images: imagesResult.recordset
-      });
-    } catch (error) {
-      console.error('Upload property image error:', error);
-      res.status(500).json({ message: 'Server error' });
-    }
-  });
-};
-
-// Upload multiple property images
-const uploadMultiplePropertyImages = (req, res) => {
-  uploadPropertyImages(req, res, async (err) => {
-    if (err) {
-      return res.status(400).json({
-        message: 'Error uploading property images',
-        error: err.message
-      });
-    }
-
-    // If no files were uploaded
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ message: 'No files uploaded' });
-    }
-
-    try {
-      const propertyId = req.params.id;
-      const hostId = req.user.id;
-
-      // Check if property exists and belongs to the host
-      const propertyResult = await db.query(
-        'SELECT * FROM properties WHERE id = $1 AND host_id = $2',
-        [propertyId, hostId]
-      );
-
-      if (propertyResult.recordset.length === 0) {
-        return res.status(404).json({
-          message: 'Property not found or you do not have permission to update it'
-        });
-      }
-
-      // Start a transaction
-      const transactionId = await db.beginTransaction();
-
-      // If setPrimary is true, update all existing images to non-primary
-      if (req.body.set_primary === 'true') {
-        await db.queryWithinTransaction(
-          transactionId,
-          'UPDATE property_images SET is_primary = 0 WHERE property_id = $1',
-          [propertyId]
-        );
-      }
-
-      // Insert all uploaded images
-      const uploadedImages = [];
-      for (let i = 0; i < req.files.length; i++) {
-        const relativePath = `/uploads/property-images/${req.files[i].filename}`;
-        const imageUrl = `${req.app.locals.BASE_URL}${relativePath}`;
-        // First image is primary if setPrimary is true
-        const isPrimary = req.body.set_primary === 'true' && i === 0;
-
-        const result = await db.queryWithinTransaction(
-          transactionId,
-          'INSERT INTO property_images (property_id, image_url, is_primary) OUTPUT INSERTED.* VALUES ($1, $2, $3)',
-          [propertyId, imageUrl, isPrimary]
-        );
-
-        uploadedImages.push(result.recordset[0]);
-      }
-
-      // Commit transaction
-      await db.commitTransaction(transactionId);
-
-      // Get all property images
-      const imagesResult = await db.query(
-        'SELECT * FROM property_images WHERE property_id = $1 ORDER BY is_primary DESC',
-        [propertyId]
-      );
-
-      res.json({
-        message: 'Property images uploaded successfully',
-        uploaded_images: uploadedImages,
-        all_images: imagesResult.recordset
-      });
-    } catch (error) {
-      // Rollback transaction on error
-      try {
-        if (error.transactionId) {
-          await db.rollbackTransaction(error.transactionId);
-        }
-      } catch (rollbackError) {
-        console.error('Rollback error:', rollbackError);
-      }
-      console.error('Upload property images error:', error);
-      res.status(500).json({ message: 'Server error' });
-    }
-  });
-};
-
+// Export the functions
 module.exports = {
   getAllProperties,
   getPropertyById,
+  searchProperties,
+  getPropertiesByHost,
   createProperty,
   updateProperty,
-  deleteProperty,
-  getPropertiesByHost,
-  searchProperties,
-  uploadSinglePropertyImage,
-  uploadMultiplePropertyImages
+  deleteProperty
 };

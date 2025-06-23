@@ -5,6 +5,8 @@ const morgan = require('morgan');
 const path = require('path');
 require('dotenv').config();
 
+// Note: CORS is configured to accept requests from all origins for development/testing
+
 // Import routes
 const userRoutes = require('./routes/users');
 const propertyRoutes = require('./routes/properties');
@@ -23,9 +25,29 @@ const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 // Make BASE_URL available to all routes
 app.locals.BASE_URL = BASE_URL;
 
+// CORS configuration - Allow requests from everywhere
+const corsOptions = {
+  origin: true, // Allow all origins
+  credentials: true, // Allow credentials (cookies, authorization headers)
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'], // Allow all common HTTP methods
+  allowedHeaders: [
+    'Origin',
+    'X-Requested-With',
+    'Content-Type',
+    'Accept',
+    'Authorization',
+    'Cache-Control',
+    'Pragma'
+  ], // Allow common headers including Authorization
+  exposedHeaders: ['Authorization'], // Expose Authorization header to client
+  maxAge: 86400 // Cache preflight response for 24 hours
+};
+
 // Middleware
-app.use(cors());
-app.use(helmet());
+app.use(cors(corsOptions));
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" } // Allow cross-origin resource sharing
+}));
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
