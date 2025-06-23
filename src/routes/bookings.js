@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const {
+  checkPropertyAvailability,
   getUserBookings,
   getHostBookings,
   getBookingById,
@@ -8,6 +9,9 @@ const {
   updateBookingStatus
 } = require('../controllers/bookings');
 const { auth, isHost } = require('../middleware/auth');
+
+// Check property availability (public endpoint)
+router.get('/availability', checkPropertyAvailability);
 
 // Get all bookings for a user (as guest)
 router.get('/user', auth, getUserBookings);

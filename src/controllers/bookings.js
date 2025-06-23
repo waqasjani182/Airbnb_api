@@ -1,5 +1,101 @@
 const db = require('../config/db');
 
+// Check property availability for booking
+const checkPropertyAvailability = async (req, res) => {
+  try {
+    const { property_id, start_date, end_date, guests } = req.query;
+
+    // Validate required fields
+    if (!property_id || !start_date || !end_date) {
+      return res.status(400).json({
+        message: 'Property ID, start date, and end date are required'
+      });
+    }
+
+    // Validate booking dates
+    const dateValidation = validateBookingDates(start_date, end_date);
+    if (!dateValidation.isValid) {
+      return res.status(400).json({ message: dateValidation.message });
+    }
+
+    // Check if property exists
+    const propertyCheck = await db.query(
+      'SELECT * FROM Properties WHERE property_id = @param0',
+      [property_id]
+    );
+
+    if (propertyCheck.recordset.length === 0) {
+      return res.status(404).json({ message: 'Property not found' });
+    }
+
+    const property = propertyCheck.recordset[0];
+
+    // Validate guest count if provided
+    if (guests && guests > property.guest) {
+      return res.status(400).json({
+        message: `Property can accommodate maximum ${property.guest} guests`,
+        max_guests: property.guest,
+        requested_guests: parseInt(guests)
+      });
+    }
+
+    // Check if property is available for the requested dates
+    const bookingCheck = await db.query(
+      `SELECT booking_id, start_date, end_date, status, guests
+       FROM Booking
+       WHERE property_id = @param0
+       AND status != 'Cancelled'
+       AND (
+         (start_date <= @param1 AND end_date >= @param1) OR
+         (start_date <= @param2 AND end_date >= @param2) OR
+         (start_date >= @param1 AND end_date <= @param2)
+       )`,
+      [property_id, start_date, end_date]
+    );
+
+    const isAvailable = bookingCheck.recordset.length === 0;
+
+    // Calculate total amount if available
+    let totalAmount = null;
+    if (isAvailable) {
+      totalAmount = calculateTotalAmount(start_date, end_date, property.rent_per_day);
+    }
+
+    // Get existing bookings for context (optional)
+    const existingBookings = await db.query(
+      `SELECT start_date, end_date, status
+       FROM Booking
+       WHERE property_id = @param0
+       AND status != 'Cancelled'
+       AND end_date >= GETDATE()
+       ORDER BY start_date ASC`,
+      [property_id]
+    );
+
+    res.json({
+      property_id: parseInt(property_id),
+      available: isAvailable,
+      check_in_date: start_date,
+      check_out_date: end_date,
+      number_of_days: dateValidation.numberOfDays,
+      guests: guests ? parseInt(guests) : null,
+      max_guests: property.guest,
+      price_per_day: property.rent_per_day,
+      total_amount: totalAmount,
+      conflicting_bookings: isAvailable ? [] : bookingCheck.recordset,
+      upcoming_bookings: existingBookings.recordset.slice(0, 5), // Show next 5 bookings
+      property_details: {
+        title: property.title,
+        city: property.city,
+        property_type: property.property_type
+      }
+    });
+  } catch (error) {
+    console.error('Check property availability error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 // Get all bookings for a user (as guest)
 const getUserBookings = async (req, res) => {
   try {
@@ -286,6 +382,7 @@ const updateBookingStatus = async (req, res) => {
 };
 
 module.exports = {
+  checkPropertyAvailability,
   getUserBookings,
   getHostBookings,
   getBookingById,

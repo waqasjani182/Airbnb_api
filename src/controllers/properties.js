@@ -7,31 +7,32 @@ const fetchRelatedPropertyData = async (properties) => {
     return [];
   }
 
-  const propertyIds = properties.map(property => property.property_id);
+  try {
+    const propertyIds = properties.map(property => property.property_id);
 
-  // Fetch all images for the properties
-  const imagesResult = await db.query(
-    `SELECT * FROM Pictures WHERE property_id IN (${propertyIds.map((_, i) => `$${i + 1}`).join(',')})`,
-    propertyIds
-  );
+    // Fetch all images for the properties
+    const imagesResult = await db.query(
+      `SELECT * FROM Pictures WHERE property_id IN (${propertyIds.map((_, i) => `$${i + 1}`).join(',')})`,
+      propertyIds
+    );
 
-  // Fetch all facilities (amenities) for the properties
-  const facilitiesResult = await db.query(
-    `SELECT f.*, pf.property_id
-     FROM Facilities f
-     JOIN Property_Facilities pf ON f.facility_id = pf.facility_id
-     WHERE pf.property_id IN (${propertyIds.map((_, i) => `$${i + 1}`).join(',')})`,
-    propertyIds
-  );
+    // Fetch all facilities (amenities) for the properties
+    const facilitiesResult = await db.query(
+      `SELECT f.*, pf.property_id
+       FROM Facilities f
+       JOIN Property_Facilities pf ON f.facility_id = pf.facility_id
+       WHERE pf.property_id IN (${propertyIds.map((_, i) => `$${i + 1}`).join(',')})`,
+      propertyIds
+    );
 
-  // Fetch all reviews for the properties
-  const reviewsResult = await db.query(
-    `SELECT br.*, u.name, br.property_id
-     FROM Booking_Review br
-     JOIN Users u ON br.user_ID = u.user_ID
-     WHERE br.property_id IN (${propertyIds.map((_, i) => `$${i + 1}`).join(',')})`,
-    propertyIds
-  );
+    // Fetch all reviews for the properties
+    const reviewsResult = await db.query(
+      `SELECT br.*, u.name, br.property_id
+       FROM Booking_Review br
+       JOIN Users u ON br.user_ID = u.user_ID
+       WHERE br.property_id IN (${propertyIds.map((_, i) => `$${i + 1}`).join(',')})`,
+      propertyIds
+    );
 
   // Group images, facilities, and reviews by property_id
   const imagesByPropertyId = {};
@@ -83,6 +84,18 @@ const fetchRelatedPropertyData = async (properties) => {
   });
 
   return enhancedProperties;
+  } catch (error) {
+    console.error('Error fetching related property data:', error);
+    // Return properties without related data if there's an error
+    return properties.map(property => ({
+      ...property,
+      images: [],
+      facilities: [],
+      reviews: [],
+      avg_rating: 0,
+      review_count: 0
+    }));
+  }
 };
 
 // Helper function to validate property type specific requirements
@@ -794,13 +807,11 @@ const getPropertiesByHost = async (req, res) => {
     const hostId = req.params.hostId;
 
     const result = await db.query(
-      `SELECT p.*,
-       (SELECT TOP 1 image_url FROM property_images WHERE property_id = p.id AND is_primary = 1) as primary_image,
-       (SELECT AVG(CAST(rating AS FLOAT)) FROM reviews WHERE property_id = p.id) as avg_rating,
-       (SELECT COUNT(*) FROM reviews WHERE property_id = p.id) as review_count
-       FROM properties p
-       WHERE p.host_id = $1
-       ORDER BY p.created_at DESC`,
+      `SELECT p.*, u.name as host_name
+       FROM Properties p
+       JOIN Users u ON p.user_id = u.user_ID
+       WHERE p.user_id = $1
+       ORDER BY p.property_id DESC`,
       [hostId]
     );
 
@@ -826,38 +837,39 @@ const searchProperties = async (req, res) => {
       bedrooms,
       property_type,
       city,
-      state,
-      country
+      min_rating,
+      max_rating
     } = req.query;
-
-    if (!query) {
-      return res.status(400).json({ message: 'Search query is required' });
-    }
 
     const offset = (page - 1) * limit;
 
-    // Build the search query
+    // Build the search query using new schema table names
+    // Include average rating calculation in the main query
     let searchQuery = `
-      SELECT p.*, u.first_name as host_first_name, u.last_name as host_last_name,
-      (SELECT TOP 1 image_url FROM property_images WHERE property_id = p.id AND is_primary = 1) as primary_image,
-      (SELECT AVG(CAST(rating AS FLOAT)) FROM reviews WHERE property_id = p.id) as avg_rating,
-      (SELECT COUNT(*) FROM reviews WHERE property_id = p.id) as review_count
-      FROM properties p
-      JOIN users u ON p.host_id = u.id
-      WHERE (
-        LOWER(p.title) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.description) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.address) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.city) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.state) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.country) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.zip_code) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.property_type) LIKE '%' + LOWER($1) + '%'
-      )
+      SELECT p.*, u.name as host_name,
+             COALESCE(AVG(br.property_rating), 0) as avg_rating,
+             COUNT(br.property_rating) as review_count
+      FROM Properties p
+      JOIN Users u ON p.user_id = u.user_ID
+      LEFT JOIN Booking_Review br ON p.property_id = br.property_id
+      WHERE 1=1
     `;
 
-    const queryParams = [query];
-    let paramIndex = 2;
+    const queryParams = [];
+    let paramIndex = 1;
+
+    // Add search condition only if query is provided
+    if (query) {
+      searchQuery += ` AND (
+        LOWER(p.title) LIKE '%' + LOWER($${paramIndex}) + '%' OR
+        LOWER(p.description) LIKE '%' + LOWER($${paramIndex}) + '%' OR
+        LOWER(p.address) LIKE '%' + LOWER($${paramIndex}) + '%' OR
+        LOWER(p.city) LIKE '%' + LOWER($${paramIndex}) + '%' OR
+        LOWER(p.property_type) LIKE '%' + LOWER($${paramIndex}) + '%'
+      )`;
+      queryParams.push(query);
+      paramIndex++;
+    }
 
     // Add filters
     if (city) {
@@ -866,32 +878,21 @@ const searchProperties = async (req, res) => {
       paramIndex++;
     }
 
-    if (state) {
-      searchQuery += ` AND LOWER(p.state) = LOWER($${paramIndex})`;
-      queryParams.push(state);
-      paramIndex++;
-    }
-
-    if (country) {
-      searchQuery += ` AND LOWER(p.country) = LOWER($${paramIndex})`;
-      queryParams.push(country);
-      paramIndex++;
-    }
-
     if (min_price) {
-      searchQuery += ` AND p.price_per_night >= $${paramIndex}`;
+      searchQuery += ` AND p.rent_per_day >= $${paramIndex}`;
       queryParams.push(min_price);
       paramIndex++;
     }
 
     if (max_price) {
-      searchQuery += ` AND p.price_per_night <= $${paramIndex}`;
+      searchQuery += ` AND p.rent_per_day <= $${paramIndex}`;
       queryParams.push(max_price);
       paramIndex++;
     }
 
     if (bedrooms) {
-      searchQuery += ` AND p.bedrooms >= $${paramIndex}`;
+      // Check if property is a house and has enough bedrooms
+      searchQuery += ` AND EXISTS (SELECT 1 FROM House h WHERE h.property_id = p.property_id AND h.total_bedrooms >= $${paramIndex})`;
       queryParams.push(bedrooms);
       paramIndex++;
     }
@@ -902,31 +903,59 @@ const searchProperties = async (req, res) => {
       paramIndex++;
     }
 
+    // Group by all non-aggregate columns
+    searchQuery += ` GROUP BY p.property_id, p.user_id, p.title, p.description, p.address, p.city, p.latitude, p.longitude, p.rent_per_day, p.property_type, p.guest, u.name`;
+
+    // Add rating filters after GROUP BY using HAVING clause
+    if (min_rating) {
+      searchQuery += ` HAVING AVG(br.property_rating) >= $${paramIndex}`;
+      queryParams.push(parseFloat(min_rating));
+      paramIndex++;
+    }
+
+    if (max_rating) {
+      if (min_rating) {
+        searchQuery += ` AND AVG(br.property_rating) <= $${paramIndex}`;
+      } else {
+        searchQuery += ` HAVING AVG(br.property_rating) <= $${paramIndex}`;
+      }
+      queryParams.push(parseFloat(max_rating));
+      paramIndex++;
+    }
+
     // Add pagination
-    searchQuery += ` ORDER BY p.created_at DESC OFFSET $${paramIndex} ROWS FETCH NEXT $${paramIndex + 1} ROWS ONLY`;
+    searchQuery += ` ORDER BY p.property_id DESC OFFSET $${paramIndex} ROWS FETCH NEXT $${paramIndex + 1} ROWS ONLY`;
     queryParams.push(offset, limit);
 
     // Execute query
     const result = await db.query(searchQuery, queryParams);
 
     // Get total count for pagination
+    // Use subquery to handle rating filters properly
     let countQuery = `
-      SELECT COUNT(*) as count FROM properties p
-      WHERE (
-        LOWER(p.title) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.description) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.address) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.city) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.state) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.country) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.zip_code) LIKE '%' + LOWER($1) + '%' OR
-        LOWER(p.property_type) LIKE '%' + LOWER($1) + '%'
-      )
+      SELECT COUNT(*) as count FROM (
+        SELECT p.property_id
+        FROM Properties p
+        LEFT JOIN Booking_Review br ON p.property_id = br.property_id
+        WHERE 1=1
     `;
 
     // Apply the same filters to count query
-    let countQueryParams = [query];
-    let countParamIndex = 2;
+    let countQueryParams = [];
+    let countParamIndex = 1;
+
+    // Add search condition only if query is provided
+    if (query) {
+      countQuery += ` AND (
+        LOWER(p.title) LIKE '%' + LOWER($${countParamIndex}) + '%' OR
+        LOWER(p.description) LIKE '%' + LOWER($${countParamIndex}) + '%' OR
+        LOWER(p.address) LIKE '%' + LOWER($${countParamIndex}) + '%' OR
+        LOWER(p.city) LIKE '%' + LOWER($${countParamIndex}) + '%' OR
+        LOWER(p.property_type) LIKE '%' + LOWER($${countParamIndex}) + '%'
+      )`;
+      countQueryParams.push(query);
+      countParamIndex++;
+    }
 
     if (city) {
       countQuery += ` AND LOWER(p.city) = LOWER($${countParamIndex})`;
@@ -934,32 +963,20 @@ const searchProperties = async (req, res) => {
       countParamIndex++;
     }
 
-    if (state) {
-      countQuery += ` AND LOWER(p.state) = LOWER($${countParamIndex})`;
-      countQueryParams.push(state);
-      countParamIndex++;
-    }
-
-    if (country) {
-      countQuery += ` AND LOWER(p.country) = LOWER($${countParamIndex})`;
-      countQueryParams.push(country);
-      countParamIndex++;
-    }
-
     if (min_price) {
-      countQuery += ` AND p.price_per_night >= $${countParamIndex}`;
+      countQuery += ` AND p.rent_per_day >= $${countParamIndex}`;
       countQueryParams.push(min_price);
       countParamIndex++;
     }
 
     if (max_price) {
-      countQuery += ` AND p.price_per_night <= $${countParamIndex}`;
+      countQuery += ` AND p.rent_per_day <= $${countParamIndex}`;
       countQueryParams.push(max_price);
       countParamIndex++;
     }
 
     if (bedrooms) {
-      countQuery += ` AND p.bedrooms >= $${countParamIndex}`;
+      countQuery += ` AND EXISTS (SELECT 1 FROM House h WHERE h.property_id = p.property_id AND h.total_bedrooms >= $${countParamIndex})`;
       countQueryParams.push(bedrooms);
       countParamIndex++;
     }
@@ -970,11 +987,37 @@ const searchProperties = async (req, res) => {
       countParamIndex++;
     }
 
+    // Add GROUP BY for the subquery
+    countQuery += ` GROUP BY p.property_id`;
+
+    // Add rating filters using HAVING clause
+    if (min_rating) {
+      countQuery += ` HAVING AVG(br.property_rating) >= $${countParamIndex}`;
+      countQueryParams.push(parseFloat(min_rating));
+      countParamIndex++;
+    }
+
+    if (max_rating) {
+      if (min_rating) {
+        countQuery += ` AND AVG(br.property_rating) <= $${countParamIndex}`;
+      } else {
+        countQuery += ` HAVING AVG(br.property_rating) <= $${countParamIndex}`;
+      }
+      countQueryParams.push(parseFloat(max_rating));
+      countParamIndex++;
+    }
+
+    // Close the subquery
+    countQuery += `) as filtered_properties`;
+
     const countResult = await db.query(countQuery, countQueryParams);
     const totalProperties = parseInt(countResult.recordset[0].count);
 
-    // Fetch related data for properties
-    const enhancedProperties = await fetchRelatedPropertyData(result.recordset);
+    // Fetch related data for properties only if we have results
+    let enhancedProperties = [];
+    if (result.recordset && result.recordset.length > 0) {
+      enhancedProperties = await fetchRelatedPropertyData(result.recordset);
+    }
 
     res.json({
       properties: enhancedProperties,

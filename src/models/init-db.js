@@ -157,6 +157,48 @@ async function initializeSchema() {
   }
 }
 
+async function insertSampleData() {
+  try {
+    console.log('Inserting sample data...');
+
+    const sql = new mssql.ConnectionPool(airbnbConfig);
+    await sql.connect();
+
+    // Read and execute the sample data SQL file
+    const sampleDataPath = path.join(__dirname, 'init-data.sql');
+    const sampleDataSQL = fs.readFileSync(sampleDataPath, 'utf8');
+
+    // Split by semicolon and filter out empty statements
+    const statements = sampleDataSQL.split(';').filter(stmt => stmt.trim() !== '' && !stmt.trim().startsWith('--'));
+
+    for (const statement of statements) {
+      if (statement.trim() !== '' && !statement.trim().startsWith('PRINT')) {
+        try {
+          await sql.query(statement);
+        } catch (error) {
+          // Ignore duplicate key errors (data already exists)
+          if (!error.message.includes('duplicate key') && !error.message.includes('PRIMARY KEY constraint')) {
+            console.error('Error executing statement:', statement.substring(0, 100) + '...');
+            console.error('Error:', error.message);
+          }
+        }
+      }
+    }
+
+    console.log('Sample data inserted successfully');
+    await sql.close();
+    return true;
+  } catch (error) {
+    console.error('Error inserting sample data:', error);
+    try {
+      await sql.close();
+    } catch (err) {
+      // Ignore error on close
+    }
+    return false;
+  }
+}
+
 async function initializeDatabase() {
   const maxRetries = 10; // Increase max retries for Windows
   let retryCount = 0;
@@ -175,8 +217,11 @@ async function initializeDatabase() {
       if (dbCreated) {
         const schemaInitialized = await initializeSchema();
         if (schemaInitialized) {
-          console.log('Database initialization completed successfully');
-          success = true;
+          const sampleDataInserted = await insertSampleData();
+          if (sampleDataInserted) {
+            console.log('Database initialization completed successfully');
+            success = true;
+          }
         }
       }
 
